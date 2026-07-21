@@ -1,8 +1,6 @@
-services:
+﻿services:
   batcharr:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/bmj812/batcharr:latest
     container_name: batcharr
     restart: unless-stopped
     ports:
