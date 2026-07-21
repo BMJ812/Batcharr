@@ -1,0 +1,18 @@
+services:
+  batcharr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: batcharr
+    restart: unless-stopped
+    ports:
+      - "5058:3000"
+    environment:
+      PUID: "99"
+      PGID: "100"
+      TZ: "America/Los_Angeles"
+      BATCHARR_PASSWORD: "change-this-password"
+      BATCHARR_SECRET: "replace-with-a-long-random-secret"
+      BATCHARR_COOKIE_SECURE: "false"
+    volumes:
+      - ./batcharr-config:/config
