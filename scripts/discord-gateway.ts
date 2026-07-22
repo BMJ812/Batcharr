@@ -5,6 +5,7 @@ import {
   MessageFlags,
   type BaseInteraction,
   type InteractionEditReplyOptions,
+  type InteractionReplyOptions,
 } from "discord.js";
 import {
   discordChannelAllowed,
@@ -42,7 +43,7 @@ function toEditReplyOptions(
   payload: DiscordMessagePayload,
 ): InteractionEditReplyOptions {
   return {
-    content: payload.content,
+    content: payload.content ?? undefined,
     embeds: payload.embeds,
     components:
       payload.components as InteractionEditReplyOptions["components"],
@@ -52,6 +53,19 @@ function toEditReplyOptions(
   };
 }
 
+function toReplyOptions(
+  payload: DiscordMessagePayload,
+): InteractionReplyOptions {
+  return {
+    content: payload.content ?? undefined,
+    embeds: payload.embeds,
+    components:
+      payload.components as InteractionReplyOptions["components"],
+    allowedMentions: {
+      parse: [],
+    },
+  };
+}
 function commandPayload(
   interaction: BaseInteraction,
 ): DiscordInteraction {
@@ -197,7 +211,7 @@ async function handleInteraction(
         );
 
       await interaction.followUp({
-        ...toEditReplyOptions(payload),
+        ...toReplyOptions(payload),
         flags: MessageFlags.Ephemeral,
       });
 
