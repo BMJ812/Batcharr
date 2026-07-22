@@ -1,4 +1,5 @@
-﻿import { verifyKey } from "discord-interactions";
+import { verifyKey } from "discord-interactions";
+import { readSettings } from "@/lib/db";
 
 export interface DiscordConfig {
   applicationId: string;
@@ -19,13 +20,29 @@ function parseIdSet(value: string | undefined): Set<string> {
 }
 
 export function readDiscordConfig(): DiscordConfig {
+  const settings = readSettings();
+
   return {
-    applicationId: process.env.DISCORD_APPLICATION_ID?.trim() ?? "",
-    publicKey: process.env.DISCORD_PUBLIC_KEY?.trim() ?? "",
-    botToken: process.env.DISCORD_BOT_TOKEN?.trim() ?? "",
-    guildId: process.env.DISCORD_GUILD_ID?.trim() ?? "",
-    allowedChannelIds: parseIdSet(process.env.DISCORD_ALLOWED_CHANNEL_IDS),
-    allowedRoleIds: parseIdSet(process.env.DISCORD_ALLOWED_ROLE_IDS),
+    applicationId:
+      process.env.DISCORD_APPLICATION_ID?.trim() ||
+      settings.discordApplicationId,
+    publicKey:
+      process.env.DISCORD_PUBLIC_KEY?.trim() ||
+      settings.discordPublicKey,
+    botToken:
+      process.env.DISCORD_BOT_TOKEN?.trim() ||
+      settings.discordBotToken,
+    guildId:
+      process.env.DISCORD_GUILD_ID?.trim() ||
+      settings.discordGuildId,
+    allowedChannelIds: parseIdSet(
+      process.env.DISCORD_ALLOWED_CHANNEL_IDS?.trim() ||
+      settings.discordAllowedChannelIds,
+    ),
+    allowedRoleIds: parseIdSet(
+      process.env.DISCORD_ALLOWED_ROLE_IDS?.trim() ||
+      settings.discordAllowedRoleIds,
+    ),
   };
 }
 

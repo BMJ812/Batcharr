@@ -6,6 +6,22 @@ import type { PublicSettings, StoredSettings } from "@/lib/types";
 
 let database: DatabaseSync | null = null;
 
+function ensureSettingsColumn(
+  db: DatabaseSync,
+  columnName: string,
+  definition: string,
+): void {
+  const columns = db
+    .prepare("PRAGMA table_info(settings)")
+    .all() as unknown as Array<{ name: string }>;
+
+  if (columns.some((column) => column.name === columnName)) return;
+
+  db.exec(
+    `ALTER TABLE settings ADD COLUMN ${columnName} ${definition}`,
+  );
+}
+
 function configDirectory(): string {
   const preferred = process.env.BATCHARR_CONFIG_DIR?.trim();
   if (preferred) return preferred;
@@ -38,6 +54,12 @@ function getDatabase(): DatabaseSync {
       sonarr_monitor TEXT NOT NULL DEFAULT 'all',
       sonarr_season_folder INTEGER NOT NULL DEFAULT 1,
       sonarr_search_on_add INTEGER NOT NULL DEFAULT 1,
+      discord_application_id TEXT NOT NULL DEFAULT '',
+      discord_public_key TEXT NOT NULL DEFAULT '',
+      discord_bot_token TEXT NOT NULL DEFAULT '',
+      discord_guild_id TEXT NOT NULL DEFAULT '',
+      discord_allowed_channel_ids TEXT NOT NULL DEFAULT '',
+      discord_allowed_role_ids TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -54,6 +76,37 @@ function getDatabase(): DatabaseSync {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  ensureSettingsColumn(
+    database,
+    "discord_application_id",
+    "TEXT NOT NULL DEFAULT ''",
+  );
+  ensureSettingsColumn(
+    database,
+    "discord_public_key",
+    "TEXT NOT NULL DEFAULT ''",
+  );
+  ensureSettingsColumn(
+    database,
+    "discord_bot_token",
+    "TEXT NOT NULL DEFAULT ''",
+  );
+  ensureSettingsColumn(
+    database,
+    "discord_guild_id",
+    "TEXT NOT NULL DEFAULT ''",
+  );
+  ensureSettingsColumn(
+    database,
+    "discord_allowed_channel_ids",
+    "TEXT NOT NULL DEFAULT ''",
+  );
+  ensureSettingsColumn(
+    database,
+    "discord_allowed_role_ids",
+    "TEXT NOT NULL DEFAULT ''",
+  );
 
   return database;
 }
@@ -74,6 +127,12 @@ interface SettingsRow {
   sonarr_monitor: string;
   sonarr_season_folder: number;
   sonarr_search_on_add: number;
+  discord_application_id: string;
+  discord_public_key: string;
+  discord_bot_token: string;
+  discord_guild_id: string;
+  discord_allowed_channel_ids: string;
+  discord_allowed_role_ids: string;
 }
 
 export function readSettings(): StoredSettings {
@@ -94,6 +153,12 @@ export function readSettings(): StoredSettings {
     sonarrMonitor: row.sonarr_monitor,
     sonarrSeasonFolder: Boolean(row.sonarr_season_folder),
     sonarrSearchOnAdd: Boolean(row.sonarr_search_on_add),
+    discordApplicationId: row.discord_application_id,
+    discordPublicKey: decryptSecret(row.discord_public_key),
+    discordBotToken: decryptSecret(row.discord_bot_token),
+    discordGuildId: row.discord_guild_id,
+    discordAllowedChannelIds: row.discord_allowed_channel_ids,
+    discordAllowedRoleIds: row.discord_allowed_role_ids,
   };
 }
 
@@ -119,6 +184,54 @@ export function readPublicSettings(): PublicSettings {
       seasonFolder: settings.sonarrSeasonFolder,
       searchOnAdd: settings.sonarrSearchOnAdd,
     },
+    discord: {
+      applicationId:
+        process.env.DISCORD_APPLICATION_ID?.trim() ||
+        settings.discordApplicationId,
+      hasPublicKey: Boolean(
+        process.env.DISCORD_PUBLIC_KEY?.trim() ||
+        settings.discordPublicKey,
+      ),
+      hasBotToken: Boolean(
+        process.env.DISCORD_BOT_TOKEN?.trim() ||
+        settings.discordBotToken,
+      ),
+      guildId:
+        process.env.DISCORD_GUILD_ID?.trim() ||
+        settings.discordGuildId,
+      allowedChannelIds:
+        process.env.DISCORD_ALLOWED_CHANNEL_IDS?.trim() ||
+        settings.discordAllowedChannelIds,
+      allowedRoleIds:
+        process.env.DISCORD_ALLOWED_ROLE_IDS?.trim() ||
+        settings.discordAllowedRoleIds,
+      configured: Boolean(
+        (
+          process.env.DISCORD_APPLICATION_ID?.trim() ||
+          settings.discordApplicationId
+        ) &&
+        (
+          process.env.DISCORD_PUBLIC_KEY?.trim() ||
+          settings.discordPublicKey
+        ) &&
+        (
+          process.env.DISCORD_BOT_TOKEN?.trim() ||
+          settings.discordBotToken
+        ) &&
+        (
+          process.env.DISCORD_GUILD_ID?.trim() ||
+          settings.discordGuildId
+        ),
+      ),
+      managedByEnvironment: Boolean(
+        process.env.DISCORD_APPLICATION_ID?.trim() ||
+        process.env.DISCORD_PUBLIC_KEY?.trim() ||
+        process.env.DISCORD_BOT_TOKEN?.trim() ||
+        process.env.DISCORD_GUILD_ID?.trim() ||
+        process.env.DISCORD_ALLOWED_CHANNEL_IDS?.trim() ||
+        process.env.DISCORD_ALLOWED_ROLE_IDS?.trim()
+      ),
+    },
   };
 }
 
@@ -143,6 +256,12 @@ export function updateSettings(input: Partial<StoredSettings>): StoredSettings {
       sonarr_monitor = ?,
       sonarr_season_folder = ?,
       sonarr_search_on_add = ?,
+      discord_application_id = ?,
+      discord_public_key = ?,
+      discord_bot_token = ?,
+      discord_guild_id = ?,
+      discord_allowed_channel_ids = ?,
+      discord_allowed_role_ids = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = 1
   `).run(
@@ -161,6 +280,12 @@ export function updateSettings(input: Partial<StoredSettings>): StoredSettings {
     merged.sonarrMonitor,
     Number(merged.sonarrSeasonFolder),
     Number(merged.sonarrSearchOnAdd),
+    merged.discordApplicationId,
+    encryptSecret(merged.discordPublicKey),
+    encryptSecret(merged.discordBotToken),
+    merged.discordGuildId,
+    merged.discordAllowedChannelIds,
+    merged.discordAllowedRoleIds,
   );
 
   return merged;

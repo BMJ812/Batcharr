@@ -20,6 +20,8 @@ export async function PUT(request: Request) {
   const body = (await request.json()) as Partial<StoredSettings> & {
     radarrApiKey?: string;
     sonarrApiKey?: string;
+    discordPublicKey?: string;
+    discordBotToken?: string;
   };
   const current = readSettings();
 
@@ -39,6 +41,32 @@ export async function PUT(request: Request) {
     sonarrMonitor: typeof body.sonarrMonitor === "string" ? body.sonarrMonitor : current.sonarrMonitor,
     sonarrSeasonFolder: typeof body.sonarrSeasonFolder === "boolean" ? body.sonarrSeasonFolder : current.sonarrSeasonFolder,
     sonarrSearchOnAdd: typeof body.sonarrSearchOnAdd === "boolean" ? body.sonarrSearchOnAdd : current.sonarrSearchOnAdd,
+    discordApplicationId:
+      typeof body.discordApplicationId === "string"
+        ? body.discordApplicationId.trim()
+        : current.discordApplicationId,
+    discordPublicKey:
+      typeof body.discordPublicKey === "string" &&
+      body.discordPublicKey.trim()
+        ? body.discordPublicKey.trim()
+        : current.discordPublicKey,
+    discordBotToken:
+      typeof body.discordBotToken === "string" &&
+      body.discordBotToken.trim()
+        ? body.discordBotToken.trim()
+        : current.discordBotToken,
+    discordGuildId:
+      typeof body.discordGuildId === "string"
+        ? body.discordGuildId.trim()
+        : current.discordGuildId,
+    discordAllowedChannelIds:
+      typeof body.discordAllowedChannelIds === "string"
+        ? body.discordAllowedChannelIds.trim()
+        : current.discordAllowedChannelIds,
+    discordAllowedRoleIds:
+      typeof body.discordAllowedRoleIds === "string"
+        ? body.discordAllowedRoleIds.trim()
+        : current.discordAllowedRoleIds,
   };
 
   updateSettings(input);

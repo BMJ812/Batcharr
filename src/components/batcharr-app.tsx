@@ -47,6 +47,12 @@ interface SettingsForm {
   sonarrMonitor: string;
   sonarrSeasonFolder: boolean;
   sonarrSearchOnAdd: boolean;
+  discordApplicationId: string;
+  discordPublicKey: string;
+  discordBotToken: string;
+  discordGuildId: string;
+  discordAllowedChannelIds: string;
+  discordAllowedRoleIds: string;
 }
 
 const EMPTY_SETTINGS: SettingsForm = {
@@ -65,6 +71,12 @@ const EMPTY_SETTINGS: SettingsForm = {
   sonarrMonitor: "all",
   sonarrSeasonFolder: true,
   sonarrSearchOnAdd: true,
+  discordApplicationId: "",
+  discordPublicKey: "",
+  discordBotToken: "",
+  discordGuildId: "",
+  discordAllowedChannelIds: "",
+  discordAllowedRoleIds: "",
 };
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -97,6 +109,12 @@ function publicToForm(settings: PublicSettings): SettingsForm {
     sonarrMonitor: settings.sonarr.monitor,
     sonarrSeasonFolder: settings.sonarr.seasonFolder,
     sonarrSearchOnAdd: settings.sonarr.searchOnAdd,
+    discordApplicationId: settings.discord.applicationId,
+    discordPublicKey: "",
+    discordBotToken: "",
+    discordGuildId: settings.discord.guildId,
+    discordAllowedChannelIds: settings.discord.allowedChannelIds,
+    discordAllowedRoleIds: settings.discord.allowedRoleIds,
   };
 }
 
@@ -679,6 +697,10 @@ function SettingsPanel({
   onSaved: () => Promise<void>;
 }) {
   const [testing, setTesting] = useState<"radarr" | "sonarr" | null>(null);
+  const [discordAction, setDiscordAction] = useState<
+    "test" | "register" | null
+  >(null);
+  const [browserOrigin, setBrowserOrigin] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -719,6 +741,93 @@ function SettingsPanel({
     }
   }
 
+  useEffect(() => {
+    // The URL is browser-specific and is unavailable during server rendering.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBrowserOrigin(window.location.origin);
+  }, []);
+
+  function discordRequestBody() {
+    return {
+      applicationId: settings.discordApplicationId,
+      publicKey: settings.discordPublicKey,
+      botToken: settings.discordBotToken,
+      guildId: settings.discordGuildId,
+      allowedChannelIds: settings.discordAllowedChannelIds,
+      allowedRoleIds: settings.discordAllowedRoleIds,
+    };
+  }
+
+  async function testDiscord() {
+    setDiscordAction("test");
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await api<{ message: string }>(
+        "/api/discord/test",
+        {
+          method: "POST",
+          body: JSON.stringify(discordRequestBody()),
+        },
+      );
+
+      setMessage(result.message);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Discord connection test failed.",
+      );
+    } finally {
+      setDiscordAction(null);
+    }
+  }
+
+  async function registerDiscordCommands() {
+    setDiscordAction("register");
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await api<{ message: string }>(
+        "/api/discord/register",
+        {
+          method: "POST",
+          body: JSON.stringify(discordRequestBody()),
+        },
+      );
+
+      setMessage(result.message);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Discord commands could not be registered.",
+      );
+    } finally {
+      setDiscordAction(null);
+    }
+  }
+
+  async function copyDiscordValue(
+    value: string,
+    label: string,
+  ) {
+    if (!value) {
+      setError(`${label} is not available yet.`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setError("");
+      setMessage(`${label} copied.`);
+    } catch {
+      setError(`Could not copy ${label.toLowerCase()}.`);
+    }
+  }
+
   async function save() {
     setSaving(true);
     setMessage("");
@@ -726,8 +835,16 @@ function SettingsPanel({
     try {
       await api("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
       await onSaved();
-      setSettings((current) => ({ ...current, radarrApiKey: "", sonarrApiKey: "" }));
-      setMessage("Settings saved. API keys remain server-side and are not returned to this page.");
+      setSettings((current) => ({
+        ...current,
+        radarrApiKey: "",
+        sonarrApiKey: "",
+        discordPublicKey: "",
+        discordBotToken: "",
+      }));
+      setMessage(
+        "Settings saved. Secret credentials remain server-side and are not returned to this page.",
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Settings could not be saved.");
     } finally {
@@ -969,6 +1086,277 @@ function SettingsPanel({
           />
         </section>
       </div>
+
+      <section className="card service-card discord-card">
+        <div className="service-heading">
+          <div className="service-icon discord-icon">D</div>
+          <div>
+            <p className="eyebrow">Requests from Discord</p>
+            <h3>Discord integration</h3>
+          </div>
+          {publicSettings?.discord.configured ? (
+            <span className="connected-label">Configured</span>
+          ) : null}
+        </div>
+
+        {publicSettings?.discord.managedByEnvironment ? (
+          <div className="alert">
+            One or more Discord values are supplied by container environment
+            variables. Environment values override fields saved below.
+          </div>
+        ) : null}
+
+        <div className="discord-setup-grid">
+          <div className="discord-fields">
+            <div className="two-column-fields">
+              <label className="field">
+                <span>Application ID</span>
+                <input
+                  value={settings.discordApplicationId}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      discordApplicationId: event.target.value,
+                    }))
+                  }
+                  placeholder="Discord application ID"
+                  inputMode="numeric"
+                />
+              </label>
+
+              <label className="field">
+                <span>Guild ID</span>
+                <input
+                  value={settings.discordGuildId}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      discordGuildId: event.target.value,
+                    }))
+                  }
+                  placeholder="Discord server ID"
+                  inputMode="numeric"
+                />
+              </label>
+            </div>
+
+            <label className="field">
+              <span>Public key</span>
+              <input
+                type="password"
+                value={settings.discordPublicKey}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    discordPublicKey: event.target.value,
+                  }))
+                }
+                placeholder={
+                  publicSettings?.discord.hasPublicKey
+                    ? "Saved — leave blank to keep"
+                    : "Paste the Discord public key"
+                }
+                autoComplete="off"
+              />
+            </label>
+
+            <label className="field">
+              <span>Bot token</span>
+              <input
+                type="password"
+                value={settings.discordBotToken}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    discordBotToken: event.target.value,
+                  }))
+                }
+                placeholder={
+                  publicSettings?.discord.hasBotToken
+                    ? "Saved — leave blank to keep"
+                    : "Paste the Discord bot token"
+                }
+                autoComplete="off"
+              />
+            </label>
+
+            <div className="two-column-fields">
+              <label className="field">
+                <span>Allowed channel IDs</span>
+                <input
+                  value={settings.discordAllowedChannelIds}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      discordAllowedChannelIds: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional, comma separated"
+                />
+              </label>
+
+              <label className="field">
+                <span>Allowed role IDs</span>
+                <input
+                  value={settings.discordAllowedRoleIds}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      discordAllowedRoleIds: event.target.value,
+                    }))
+                  }
+                  placeholder="Optional, comma separated"
+                />
+              </label>
+            </div>
+
+            <div className="divider" />
+
+            <label className="field">
+              <span>Interaction Endpoint URL</span>
+              <div className="copy-field">
+                <input
+                  value={
+                    browserOrigin
+                      ? `${browserOrigin}/api/discord/interactions`
+                      : ""
+                  }
+                  readOnly
+                  placeholder="Open Batcharr in a browser to generate this URL"
+                />
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() =>
+                    void copyDiscordValue(
+                      browserOrigin
+                        ? `${browserOrigin}/api/discord/interactions`
+                        : "",
+                      "Interaction Endpoint URL",
+                    )
+                  }
+                >
+                  Copy
+                </button>
+              </div>
+            </label>
+
+            <label className="field">
+              <span>Bot installation URL</span>
+              <div className="copy-field">
+                <input
+                  value={
+                    settings.discordApplicationId
+                      ? `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(
+                          settings.discordApplicationId,
+                        )}&scope=bot%20applications.commands&permissions=0`
+                      : ""
+                  }
+                  readOnly
+                  placeholder="Enter the Application ID first"
+                />
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={!settings.discordApplicationId}
+                  onClick={() =>
+                    void copyDiscordValue(
+                      settings.discordApplicationId
+                        ? `https://discord.com/oauth2/authorize?client_id=${encodeURIComponent(
+                            settings.discordApplicationId,
+                          )}&scope=bot%20applications.commands&permissions=0`
+                        : "",
+                      "Bot installation URL",
+                    )
+                  }
+                >
+                  Copy
+                </button>
+              </div>
+            </label>
+
+            <div className="discord-actions">
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={
+                  discordAction !== null ||
+                  !settings.discordApplicationId ||
+                  !settings.discordGuildId ||
+                  (!settings.discordBotToken &&
+                    !publicSettings?.discord.hasBotToken)
+                }
+                onClick={() => void testDiscord()}
+              >
+                {discordAction === "test"
+                  ? "Testing Discord…"
+                  : "Test Discord"}
+              </button>
+
+              <button
+                className="button button-primary"
+                type="button"
+                disabled={
+                  discordAction !== null ||
+                  !settings.discordApplicationId ||
+                  !settings.discordGuildId ||
+                  (!settings.discordBotToken &&
+                    !publicSettings?.discord.hasBotToken)
+                }
+                onClick={() => void registerDiscordCommands()}
+              >
+                {discordAction === "register"
+                  ? "Registering commands…"
+                  : "Register commands"}
+              </button>
+            </div>
+          </div>
+
+          <aside className="discord-guide">
+            <p className="eyebrow">Setup guide</p>
+            <h4>Connect Batcharr to a Discord server</h4>
+
+            <ol>
+              <li>Create an application in the Discord Developer Portal.</li>
+              <li>
+                Copy its Application ID and Public Key into Batcharr.
+              </li>
+              <li>
+                Open the Bot page, create a bot, and copy its token.
+              </li>
+              <li>
+                Enable Discord Developer Mode and copy your server ID as the
+                Guild ID.
+              </li>
+              <li>
+                Save these settings, then copy the Interaction Endpoint URL
+                into Discord’s General Information page.
+              </li>
+              <li>
+                Copy the bot installation URL, open it, and add the bot to your
+                server.
+              </li>
+              <li>
+                Test Discord, then register the slash commands.
+              </li>
+            </ol>
+
+            <div className="divider" />
+
+            <p className="eyebrow">Available commands</p>
+            <div className="command-reference">
+              <code>/movie title: Alien</code>
+              <code>/show title: Breaking Bad</code>
+              <code>/list titles: Alien; Predator; The X-Files</code>
+            </div>
+
+            <p className="field-help">
+              Leave channel and role restrictions empty to permit requests
+              throughout the server.
+            </p>
+          </aside>
+        </div>
+      </section>
 
       <section className="save-bar">
         <div>
