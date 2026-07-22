@@ -1,5 +1,5 @@
-﻿import { safeEqual, signPayload } from "@/lib/crypto";
-import type { MediaType } from "@/lib/types";
+﻿import { safeEqual, signPayload } from "./crypto";
+import type { MediaType } from "./types";
 
 const REQUEST_PREFIX = "batcharr:request";
 const CANCEL_ID = "batcharr:cancel";
@@ -90,3 +90,4 @@ export function isDiscordCancelId(
 ): boolean {
   return customId === CANCEL_ID;
 }
+
