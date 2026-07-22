@@ -21,6 +21,16 @@ export interface PublicSettings {
     seasonFolder: boolean;
     searchOnAdd: boolean;
   };
+  discord: {
+    applicationId: string;
+    hasPublicKey: boolean;
+    hasBotToken: boolean;
+    guildId: string;
+    allowedChannelIds: string;
+    allowedRoleIds: string;
+    configured: boolean;
+    managedByEnvironment: boolean;
+  };
 }
 
 export interface StoredSettings {
@@ -39,6 +49,12 @@ export interface StoredSettings {
   sonarrMonitor: string;
   sonarrSeasonFolder: boolean;
   sonarrSearchOnAdd: boolean;
+  discordApplicationId: string;
+  discordPublicKey: string;
+  discordBotToken: string;
+  discordGuildId: string;
+  discordAllowedChannelIds: string;
+  discordAllowedRoleIds: string;
 }
 
 export interface ParsedListItem {
