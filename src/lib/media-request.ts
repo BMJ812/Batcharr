@@ -7,19 +7,26 @@
 } from "@/lib/arr";
 import { addHistory, readSettings } from "@/lib/db";
 import { readCandidateToken } from "@/lib/tokens";
+import type { MediaType } from "@/lib/types";
+
+export interface MediaRequestSelection {
+  type: MediaType;
+  externalId: number;
+  title: string;
+  year: number | null;
+}
 
 export interface MediaRequestResult {
   status: "added" | "duplicate";
   message: string;
   title: string;
   year: number | null;
-  type: "movie" | "series";
+  type: MediaType;
 }
 
-export async function submitMediaRequest(
-  token: string,
+export async function submitMediaSelection(
+  selected: MediaRequestSelection,
 ): Promise<MediaRequestResult> {
-  const selected = readCandidateToken(token);
   const settings = readSettings();
 
   try {
@@ -29,7 +36,8 @@ export async function submitMediaRequest(
         : (await fetchExistingSeriesIds(settings)).ids;
 
     if (existing.has(selected.externalId)) {
-      const message = "Already exists in the target Arr library.";
+      const message =
+        "Already exists in the target Arr library.";
 
       addHistory({
         mediaType: selected.type,
@@ -90,4 +98,12 @@ export async function submitMediaRequest(
 
     throw new Error(message);
   }
+}
+
+export async function submitMediaRequest(
+  token: string,
+): Promise<MediaRequestResult> {
+  return submitMediaSelection(
+    readCandidateToken(token),
+  );
 }
