@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   parseMediaList,
   scoreMatch,
@@ -22,6 +22,17 @@ describe("splitMediaInput", () => {
     ).toEqual(["Alien", "Predator", "Event Horizon"]);
   });
 
+  it("splits comma-separated titles that each include a year", () => {
+    expect(
+      splitMediaInput(
+        "The Silence of the Lambs (1991), Candyman (1992), Scream (1996)",
+      ),
+    ).toEqual([
+      "The Silence of the Lambs (1991)",
+      "Candyman (1992)",
+      "Scream (1996)",
+    ]);
+  });
   it("splits semicolon and tab separated titles", () => {
     expect(
       splitMediaInput("Alien; Predator\tEvent Horizon"),
