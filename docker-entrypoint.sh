@@ -15,4 +15,7 @@ fi
 mkdir -p "${BATCHARR_CONFIG_DIR:-/config}"
 chown -R node:node "${BATCHARR_CONFIG_DIR:-/config}"
 
-exec gosu node:node node server.js
+exec gosu node:node sh -c '
+  node discord-gateway.cjs &
+  exec node server.js
+'

@@ -46,3 +46,4 @@ next-env.d.ts
 
 # keep the configuration template
 !.env.example
+/dist/

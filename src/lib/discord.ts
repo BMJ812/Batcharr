@@ -55,6 +55,16 @@ export function discordConfigured(config = readDiscordConfig()): boolean {
   );
 }
 
+export function discordGatewayConfigured(
+  config = readDiscordConfig(),
+): boolean {
+  return Boolean(
+    config.applicationId &&
+      config.botToken &&
+      config.guildId,
+  );
+}
+
 export async function verifyDiscordRequest(
   body: string,
   signature: string,
