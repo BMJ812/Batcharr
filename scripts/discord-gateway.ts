@@ -188,31 +188,45 @@ async function handleInteraction(
   }
 
   try {
-    let payload: DiscordMessagePayload;
-
-    if (
-
-      interaction.isButton() ||
-
-      interaction.isStringSelectMenu()
-
-    ) {
+    if (interaction.isStringSelectMenu()) {
       await interaction.deferUpdate();
 
-      payload =
+      const payload =
         await processDiscordComponent(
           componentPayload(interaction),
         );
-    } else {
-      await interaction.deferReply({
+
+      await interaction.followUp({
+        ...toEditReplyOptions(payload),
         flags: MessageFlags.Ephemeral,
       });
 
-      payload =
-        await processDiscordCommand(
-          commandPayload(interaction),
-        );
+      return;
     }
+
+    if (interaction.isButton()) {
+      await interaction.deferUpdate();
+
+      const payload =
+        await processDiscordComponent(
+          componentPayload(interaction),
+        );
+
+      await interaction.editReply(
+        toEditReplyOptions(payload),
+      );
+
+      return;
+    }
+
+    await interaction.deferReply({
+      flags: MessageFlags.Ephemeral,
+    });
+
+    const payload =
+      await processDiscordCommand(
+        commandPayload(interaction),
+      );
 
     await interaction.editReply(
       toEditReplyOptions(payload),
