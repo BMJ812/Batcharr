@@ -6,7 +6,7 @@
         "dev": "next dev",
         "build": "next build",
         "start": "next start",
-        "lint": "eslint",
+        "lint": "eslint . --ignore-pattern \"dist/**\"",
         "test": "vitest run",
         "typecheck": "tsc --noEmit",
         "discord:register": "node scripts/register-discord-commands.mjs",

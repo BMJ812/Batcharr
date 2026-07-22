@@ -1,7 +1,11 @@
 import {
   discordCancelId,
+  discordListSelectId,
   isDiscordCancelId,
+  isDiscordListSelectId,
+  makeDiscordListValue,
   makeDiscordRequestId,
+  readDiscordListValue,
   readDiscordRequestId,
 } from "@/lib/discord-actions";
 import { submitMediaSelection } from "@/lib/media-request";
@@ -15,6 +19,7 @@ import type {
 
 const COMPONENT_ACTION_ROW = 1;
 const COMPONENT_BUTTON = 2;
+const COMPONENT_STRING_SELECT = 3;
 
 const BUTTON_PRIMARY = 1;
 const BUTTON_SECONDARY = 2;
@@ -49,6 +54,7 @@ export interface DiscordInteraction {
     name?: string;
     custom_id?: string;
     options?: DiscordCommandOption[];
+    values?: string[];
   };
   message?: {
     embeds?: DiscordEmbed[];
@@ -78,57 +84,207 @@ function getStringOption(
     : "";
 }
 
-function formatCandidate(
-  candidate: LookupCandidate,
+function truncateDiscordText(
+  value: string,
+  maximumLength: number,
 ): string {
-  const year = candidate.year
-    ? ` (${candidate.year})`
-    : "";
+  const normalized = value.trim();
 
-  const target =
-    candidate.type === "movie"
-      ? "Radarr"
-      : "Sonarr";
+  if (normalized.length <= maximumLength) {
+    return normalized;
+  }
 
-  const duplicate = candidate.alreadyExists
-    ? " — already in library"
-    : "";
-
-  return `**${candidate.title}${year}** — ${target}${duplicate}`;
+  return `${normalized.slice(0, maximumLength - 1)}…`;
 }
 
-function formatLookupResults(
+function listReviewPayload(
   results: LookupItemResult[],
-): string {
-  const lines: string[] = [];
+): DiscordMessagePayload {
+  const resolved = results
+    .map((result) => ({
+      result,
+      candidate: result.candidates[0],
+    }))
+    .filter(
+      (
+        entry,
+      ): entry is {
+        result: LookupItemResult;
+        candidate: LookupCandidate;
+      } => Boolean(entry.candidate),
+    );
 
-  for (const result of results.slice(0, 20)) {
-    const best = result.candidates[0];
+  const ready = resolved.filter(
+    (entry) => !entry.candidate.alreadyExists,
+  );
 
-    if (!best) {
-      lines.push(
-        `❌ **${result.item.query}** — ${
-          result.error ?? "No match found."
-        }`,
+  const duplicates = resolved.filter(
+    (entry) => entry.candidate.alreadyExists,
+  );
+
+  const unresolved = results.filter(
+    (result) => !result.candidates[0],
+  );
+
+  const menuEntries = ready.slice(0, 25);
+
+  const summaryLines = [
+    `✅ **${ready.length}** available to review`,
+    `⚠️ **${duplicates.length}** already in the library`,
+    `❌ **${unresolved.length}** unresolved`,
+  ];
+
+  if (ready.length > 25) {
+    summaryLines.push(
+      `\nShowing the first 25 of ${ready.length} available titles.`,
+    );
+  }
+
+  if (duplicates.length > 0) {
+    const duplicateTitles = duplicates
+      .slice(0, 8)
+      .map(({ candidate }) => {
+        const year = candidate.year
+          ? ` (${candidate.year})`
+          : "";
+
+        return `• ${candidate.title}${year}`;
+      });
+
+    summaryLines.push(
+      "",
+      "**Already in library**",
+      ...duplicateTitles,
+    );
+
+    if (duplicates.length > 8) {
+      summaryLines.push(
+        `• …and ${duplicates.length - 8} more`,
+      );
+    }
+  }
+
+  if (unresolved.length > 0) {
+    const unresolvedTitles = unresolved
+      .slice(0, 8)
+      .map(
+        (result) =>
+          `• ${result.item.query}`,
       );
 
-      continue;
+    summaryLines.push(
+      "",
+      "**Could not resolve**",
+      ...unresolvedTitles,
+    );
+
+    if (unresolved.length > 8) {
+      summaryLines.push(
+        `• …and ${unresolved.length - 8} more`,
+      );
     }
-
-    lines.push(
-      `${best.alreadyExists ? "⚠️" : "✅"} ${formatCandidate(best)}`,
-    );
   }
 
-  if (results.length > 20) {
-    lines.push(
-      `\nShowing the first 20 of ${results.length} resolved titles.`,
-    );
-  }
+  const components =
+    menuEntries.length > 0
+      ? [
+          {
+            type: COMPONENT_ACTION_ROW,
+            components: [
+              {
+                type: COMPONENT_STRING_SELECT,
+                custom_id: discordListSelectId(),
+                placeholder:
+                  "Choose a title to review",
+                min_values: 1,
+                max_values: 1,
+                options: menuEntries.map(
+                  ({ candidate }) => {
+                    const year = candidate.year
+                      ? ` (${candidate.year})`
+                      : "";
 
-  return lines.join("\n");
+                    const target =
+                      candidate.type === "movie"
+                        ? "Radarr"
+                        : "Sonarr";
+
+                    return {
+                      label: truncateDiscordText(
+                        `${candidate.title}${year}`,
+                        100,
+                      ),
+                      description:
+                        truncateDiscordText(
+                          `${target} • Match confidence: ${candidate.confidence}`,
+                          100,
+                        ),
+                      value: makeDiscordListValue(
+                        candidate.type,
+                        candidate.externalId,
+                        candidate.title,
+                        candidate.year,
+                      ),
+                    };
+                  },
+                ),
+              },
+            ],
+          },
+        ]
+      : [];
+
+  return {
+    content: summaryLines.join("\n"),
+    embeds: [],
+    components,
+    allowed_mentions: {
+      parse: [],
+    },
+  };
 }
 
+async function selectedListCandidate(
+  interaction: DiscordInteraction,
+): Promise<LookupCandidate> {
+  const selectedValue =
+    interaction.data?.values?.[0];
+
+  if (!selectedValue) {
+    throw new Error(
+      "Discord did not provide the selected title.",
+    );
+  }
+
+  const selection =
+    readDiscordListValue(selectedValue);
+
+  const yearText = selection.year
+    ? ` (${selection.year})`
+    : "";
+
+  const results = await resolveMediaList(
+    `${selection.title}${yearText}`,
+    selection.type,
+  );
+
+  const candidate = results
+    .flatMap((result) => result.candidates)
+    .find(
+      (entry) =>
+        entry.type === selection.type &&
+        entry.externalId ===
+          selection.externalId,
+    );
+
+  if (!candidate) {
+    throw new Error(
+      "The selected title could not be resolved again. Run the list command again.",
+    );
+  }
+
+  return candidate;
+}
 function candidateEmbed(
   candidate: LookupCandidate,
 ): DiscordEmbed {
@@ -402,15 +558,7 @@ export async function processDiscordCommand(
     await resolveMediaList(text, hint);
 
   if (command === "list") {
-    return {
-      content:
-        formatLookupResults(results),
-      embeds: [],
-      components: [],
-      allowed_mentions: {
-        parse: [],
-      },
-    };
+    return listReviewPayload(results);
   }
 
   const firstResult = results[0];
@@ -436,6 +584,13 @@ export async function processDiscordComponent(
   const originalEmbed =
     interaction.message?.embeds?.[0];
 
+
+  if (isDiscordListSelectId(customId)) {
+    const candidate =
+      await selectedListCandidate(interaction);
+
+    return resultPayload(candidate);
+  }
   if (isDiscordCancelId(customId)) {
     return {
       content: "",
