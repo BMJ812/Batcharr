@@ -1076,3 +1076,90 @@ td:first-child {
     width: 100px;
   }
 }
+.discord-card {
+  padding: 24px;
+}
+
+.discord-icon {
+  background: rgba(88, 101, 242, 0.16);
+  color: #aeb7ff;
+}
+
+.discord-setup-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 24px;
+}
+
+.discord-fields,
+.discord-guide,
+.command-reference {
+  display: grid;
+  gap: 14px;
+}
+
+.discord-guide {
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 4px);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.discord-guide h4 {
+  margin: 0;
+}
+
+.discord-guide ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.copy-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.discord-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.command-reference code {
+  display: block;
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.field-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+  .discord-setup-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .copy-field {
+    grid-template-columns: 1fr;
+  }
+
+  .copy-field .button,
+  .discord-actions .button {
+    width: 100%;
+  }
+}
