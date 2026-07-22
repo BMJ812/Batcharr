@@ -6,6 +6,7 @@ import {
 } from "@/lib/discord-actions";
 import { submitMediaSelection } from "@/lib/media-request";
 import { resolveMediaList } from "@/lib/requests";
+import type { APIEmbed } from "discord.js";
 import type {
   LookupCandidate,
   LookupItemResult,
@@ -23,24 +24,7 @@ interface DiscordCommandOption {
   value?: string | number | boolean;
 }
 
-interface DiscordEmbedField {
-  name?: string;
-  value?: string;
-  inline?: boolean;
-}
-
-interface DiscordEmbed {
-  title?: string;
-  description?: string;
-  color?: number;
-  thumbnail?: {
-    url?: string;
-  };
-  fields?: DiscordEmbedField[];
-  footer?: {
-    text?: string;
-  };
-}
+type DiscordEmbed = APIEmbed;
 
 export interface DiscordInteraction {
   type?: number;
