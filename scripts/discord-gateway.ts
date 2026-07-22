@@ -94,9 +94,9 @@ function commandPayload(
 function componentPayload(
   interaction: BaseInteraction,
 ): DiscordInteraction {
-  if (!interaction.isButton()) {
+  if (!interaction.isButton() && !interaction.isStringSelectMenu()) {
     throw new Error(
-      "The Discord interaction is not a button.",
+      "The Discord interaction is not a supported message component.",
     );
   }
 
@@ -114,6 +114,9 @@ function componentPayload(
     },
     data: {
       custom_id: interaction.customId,
+      values: interaction.isStringSelectMenu()
+        ? interaction.values
+        : undefined,
     },
     message: {
       embeds: interaction.message.embeds.map(
@@ -128,7 +131,8 @@ async function handleInteraction(
 ): Promise<void> {
   if (
     !interaction.isChatInputCommand() &&
-    !interaction.isButton()
+    !interaction.isButton() &&
+    !interaction.isStringSelectMenu()
   ) {
     return;
   }
@@ -186,7 +190,13 @@ async function handleInteraction(
   try {
     let payload: DiscordMessagePayload;
 
-    if (interaction.isButton()) {
+    if (
+
+      interaction.isButton() ||
+
+      interaction.isStringSelectMenu()
+
+    ) {
       await interaction.deferUpdate();
 
       payload =

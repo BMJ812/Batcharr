@@ -1,4 +1,4 @@
-﻿import crypto from "node:crypto";
+import crypto from "node:crypto";
 import type { MediaHint, ParsedListItem } from "@/lib/types";
 
 const PREFIX_PATTERN = /^(movie|film|tv|show|series)\s*(?:\||:|-)+\s*/i;
@@ -44,11 +44,17 @@ export function splitMediaInput(text: string): string[] {
      * Preserve ordinary title commas when a line already looks like a single
      * numbered, bulleted, prefixed, or year-qualified entry.
      */
+    const hasYearDelimitedEntries =
+      /[\])]\s*,\s*\S/.test(physicalLine);
+
     const looksLikeSingleEntry =
       /^[-*•]\s+/.test(physicalLine) ||
       /^\d+[.)]\s+/.test(physicalLine) ||
       PREFIX_PATTERN.test(physicalLine) ||
-      YEAR_PATTERN.test(physicalLine);
+      (
+        YEAR_PATTERN.test(physicalLine) &&
+        !hasYearDelimitedEntries
+      );
 
     if (looksLikeSingleEntry || !physicalLine.includes(",")) {
       entries.push(physicalLine);
