@@ -76,6 +76,52 @@ describe("parseExternalList", () => {
     });
   });
 
+  it("collapses IMDb image captions into their matching list titles", () => {
+    const result = parseExternalList(`
+      Kevin Smith, Marilyn Ghigliotti, Jeff Anderson, Brian O'Halloran, and Lisa Spoonauer in Clerks (1994)
+      1. Clerks
+      1994
+      Dan Aykroyd, Jack Lemmon, and James Garner in My Fellow Americans (1996)
+      62. My Fellow Americans
+      1996
+    `);
+
+    expect(result.items).toHaveLength(2);
+
+    expect(
+      result.items.map((item) => ({
+        query: item.query,
+        year: item.year,
+      })),
+    ).toEqual([
+      {
+        query: "Clerks",
+        year: 1994,
+      },
+      {
+        query: "My Fellow Americans",
+        year: 1996,
+      },
+    ]);
+
+    expect(result.warnings).toContain(
+      "Skipped 2 duplicate titles.",
+    );
+  });
+
+  it("keeps remakes with different explicit years separate", () => {
+    const result = parseExternalList(`
+      1. The Thing (1951)
+      2. The Thing (1982)
+    `);
+
+    expect(result.items).toHaveLength(2);
+
+    expect(
+      result.items.map((item) => item.year),
+    ).toEqual([1951, 1982]);
+  });
+
   it("deduplicates repeated title and year rows", () => {
     const result = parseExternalList(`
       1. Alien (1979)

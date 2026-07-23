@@ -124,6 +124,54 @@ function metadataYear(value: string): number | null {
     : null;
 }
 
+function extractImageCaptionTitle(value: string): {
+  title: string;
+  year: number;
+} | null {
+  const match = value.match(
+    /^(.+?)\s+in\s+(.+?)\s*[\[(]\s*((?:19|20)\d{2})\s*[\])]\s*$/u,
+  );
+
+  if (!match) return null;
+
+  const cast = match[1].trim();
+  const title = match[2].trim();
+  const year = reasonableYear(match[3]);
+
+  if (!year || !title) return null;
+
+  const singleName =
+    /^(?:[\p{Lu}][\p{L}\p{M}.'’\-]*)(?:\s+[\p{Lu}][\p{L}\p{M}.'’\-]*){1,3}$/u.test(
+      cast,
+    );
+
+  const pairedNames =
+    /^(?:[\p{Lu}][\p{L}\p{M}.'’\-]*)(?:\s+[\p{Lu}][\p{L}\p{M}.'’\-]*){1,3}\s+and\s+(?:[\p{Lu}][\p{L}\p{M}.'’\-]*)(?:\s+[\p{Lu}][\p{L}\p{M}.'’\-]*){1,3}$/u.test(
+      cast,
+    );
+
+  const castList =
+    cast.includes(",") &&
+    /(?:\band\b|&)/i.test(cast);
+
+  if (
+    !singleName &&
+    !pairedNames &&
+    !castList
+  ) {
+    return null;
+  }
+
+  if (!isPlausibleTitle(title, true)) {
+    return null;
+  }
+
+  return {
+    title,
+    year,
+  };
+}
+
 function trailingYear(value: string): {
   title: string;
   year: number | null;
@@ -263,8 +311,14 @@ function parseCandidateLine(
       .trim();
   }
 
-  const extracted = trailingYear(line);
-  const year = forcedYear ?? extracted.year;
+  const caption =
+    extractImageCaptionTitle(line);
+
+  const extracted =
+    caption ?? trailingYear(line);
+
+  const year =
+    forcedYear ?? extracted.year;
 
   const structured =
     ranked ||
@@ -321,7 +375,9 @@ export function parseExternalList(
     .map(cleanLine)
     .filter(Boolean);
 
-  const seen = new Set<string>();
+  const itemIndexesByTitle =
+    new Map<string, number[]>();
+
   const items: ParsedListItem[] = [];
 
   let ignoredCount = 0;
@@ -329,18 +385,57 @@ export function parseExternalList(
 
   function add(candidate: CandidateLine): void {
     const item = candidate.item;
+    const titleKey =
+      normalizeTitle(item.query);
 
-    const key =
-      `${item.hint}:` +
-      `${normalizeTitle(item.query)}:` +
-      `${item.year ?? ""}`;
+    const existingIndexes =
+      itemIndexesByTitle.get(titleKey) ?? [];
 
-    if (seen.has(key)) {
+    const matchingIndex =
+      existingIndexes.find((index) => {
+        const existing = items[index];
+
+        return (
+          existing.year === item.year ||
+          existing.year === null ||
+          item.year === null
+        );
+      });
+
+    if (matchingIndex !== undefined) {
       duplicateCount += 1;
+
+      const existing =
+        items[matchingIndex];
+
+      const mergedYear =
+        existing.year ?? item.year;
+
+      const mergedHint =
+        existing.hint === "auto"
+          ? item.hint
+          : existing.hint;
+
+      items[matchingIndex] = {
+        ...existing,
+        hint: mergedHint,
+        year: mergedYear,
+        original: mergedYear
+          ? `${existing.query} (${mergedYear})`
+          : existing.original,
+      };
+
       return;
     }
 
-    seen.add(key);
+    itemIndexesByTitle.set(
+      titleKey,
+      [
+        ...existingIndexes,
+        items.length,
+      ],
+    );
+
     items.push(item);
   }
 
