@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
-import { MAX_BATCH_ITEMS, MAX_IMPORT_FILE_BYTES } from "@/lib/limits";
-import { normalizeTitle, parseMediaList } from "@/lib/parser";
+import { MAX_BATCH_ITEMS, MAX_IMPORT_FILE_BYTES } from "./limits";
+import { normalizeTitle, parseMediaList } from "./parser";
 import type {
   MediaHint,
   MediaType,
   ParsedListItem,
-} from "@/lib/types";
+} from "./types";
 
 const YEAR_PATTERN = /^(?:19|20)\d{2}$/;
 
