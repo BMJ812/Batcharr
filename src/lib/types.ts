@@ -21,6 +21,10 @@ export interface PublicSettings {
     seasonFolder: boolean;
     searchOnAdd: boolean;
   };
+  tmdb: {
+    hasAccessToken: boolean;
+    managedByEnvironment: boolean;
+  };
   discord: {
     applicationId: string;
     hasPublicKey: boolean;
@@ -49,6 +53,7 @@ export interface StoredSettings {
   sonarrMonitor: string;
   sonarrSeasonFolder: boolean;
   sonarrSearchOnAdd: boolean;
+  tmdbAccessToken: string;
   discordApplicationId: string;
   discordPublicKey: string;
   discordBotToken: string;

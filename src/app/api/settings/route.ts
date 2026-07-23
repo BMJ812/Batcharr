@@ -20,6 +20,7 @@ export async function PUT(request: Request) {
   const body = (await request.json()) as Partial<StoredSettings> & {
     radarrApiKey?: string;
     sonarrApiKey?: string;
+    tmdbAccessToken?: string;
     discordPublicKey?: string;
     discordBotToken?: string;
   };
@@ -41,6 +42,11 @@ export async function PUT(request: Request) {
     sonarrMonitor: typeof body.sonarrMonitor === "string" ? body.sonarrMonitor : current.sonarrMonitor,
     sonarrSeasonFolder: typeof body.sonarrSeasonFolder === "boolean" ? body.sonarrSeasonFolder : current.sonarrSeasonFolder,
     sonarrSearchOnAdd: typeof body.sonarrSearchOnAdd === "boolean" ? body.sonarrSearchOnAdd : current.sonarrSearchOnAdd,
+    tmdbAccessToken:
+      typeof body.tmdbAccessToken === "string" &&
+      body.tmdbAccessToken.trim()
+        ? body.tmdbAccessToken.trim()
+        : current.tmdbAccessToken,
     discordApplicationId:
       typeof body.discordApplicationId === "string"
         ? body.discordApplicationId.trim()
