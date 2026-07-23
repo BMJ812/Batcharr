@@ -199,7 +199,11 @@ function candidateFromRecord(
   const title = text(record.title);
   if (!title) return null;
   const year = numberValue(record.year);
-  const score = scoreMatch(item.query, item.year, title, year);
+  const score =
+    item.exactMatch?.type === type &&
+    item.exactMatch.externalId === externalId
+      ? 100
+      : scoreMatch(item.query, item.year, title, year);
 
   return {
     token: makeCandidateToken({ type, externalId, title, year }),
@@ -245,16 +249,28 @@ export async function lookupMovies(
   existingIds: Set<number>,
 ): Promise<LookupCandidate[]> {
   if (!settings.radarrUrl || !settings.radarrApiKey) return [];
-  const term = item.year ? `${item.query} ${item.year}` : item.query;
+  const term =
+    item.exactMatch?.type === "movie"
+      ? `tmdb:${item.exactMatch.externalId}`
+      : item.year
+        ? `${item.query} ${item.year}`
+        : item.query;
   const results = await arrFetch<unknown>(
     settings.radarrUrl,
     settings.radarrApiKey,
     `/api/v3/movie/lookup?term=${encodeURIComponent(term)}`,
   );
 
-  return recordArray(results)
+  const candidates = recordArray(results)
     .map((record) => candidateFromRecord("movie", item, record, settings.radarrUrl, existingIds))
-    .filter((candidate): candidate is LookupCandidate => candidate !== null)
+    .filter((candidate): candidate is LookupCandidate => candidate !== null);
+
+  return candidates
+    .filter((candidate) =>
+      item.exactMatch?.type === "movie"
+        ? candidate.externalId === item.exactMatch.externalId
+        : true,
+    )
     .sort((left, right) => right.score - left.score)
     .slice(0, 5);
 }
@@ -266,16 +282,28 @@ export async function lookupSeries(
   apiVersion: ApiVersion,
 ): Promise<LookupCandidate[]> {
   if (!settings.sonarrUrl || !settings.sonarrApiKey) return [];
-  const term = item.year ? `${item.query} ${item.year}` : item.query;
+  const term =
+    item.exactMatch?.type === "series"
+      ? `tvdb:${item.exactMatch.externalId}`
+      : item.year
+        ? `${item.query} ${item.year}`
+        : item.query;
   const results = await arrFetch<unknown>(
     settings.sonarrUrl,
     settings.sonarrApiKey,
     `/api/${apiVersion}/series/lookup?term=${encodeURIComponent(term)}`,
   );
 
-  return recordArray(results)
+  const candidates = recordArray(results)
     .map((record) => candidateFromRecord("series", item, record, settings.sonarrUrl, existingIds))
-    .filter((candidate): candidate is LookupCandidate => candidate !== null)
+    .filter((candidate): candidate is LookupCandidate => candidate !== null);
+
+  return candidates
+    .filter((candidate) =>
+      item.exactMatch?.type === "series"
+        ? candidate.externalId === item.exactMatch.externalId
+        : true,
+    )
     .sort((left, right) => right.score - left.score)
     .slice(0, 5);
 }

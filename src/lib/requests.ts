@@ -1,4 +1,4 @@
-﻿import {
+import {
   fetchExistingMovieIds,
   fetchExistingSeriesIds,
   humanizeArrError,
@@ -6,6 +6,7 @@
   lookupSeries,
 } from "@/lib/arr";
 import { readSettings } from "@/lib/db";
+import { MAX_BATCH_ITEMS } from "@/lib/limits";
 import { parseMediaList } from "@/lib/parser";
 import type {
   LookupItemResult,
@@ -42,19 +43,16 @@ async function mapWithConcurrency<T, R>(
   return output;
 }
 
-export async function resolveMediaList(
-  text: string,
-  defaultHint: MediaHint = "auto",
+export async function resolveMediaItems(
+  items: ParsedListItem[],
 ): Promise<LookupItemResult[]> {
-  const items = parseMediaList(text, defaultHint);
-
   if (!items.length) {
     throw new Error("No usable titles were found in the list.");
   }
 
-  if (items.length > 200) {
+  if (items.length > MAX_BATCH_ITEMS) {
     throw new Error(
-      "Batcharr is limited to 200 unique titles per batch.",
+      `Batcharr is limited to ${MAX_BATCH_ITEMS} unique titles per batch.`,
     );
   }
 
@@ -116,7 +114,9 @@ export async function resolveMediaList(
       const errors: string[] = [];
 
       if (
-        (item.hint === "movie" || item.hint === "auto") &&
+        (item.exactMatch?.type === "movie" ||
+          (!item.exactMatch &&
+            (item.hint === "movie" || item.hint === "auto"))) &&
         radarrConfigured
       ) {
         if (radarrError) {
@@ -136,7 +136,9 @@ export async function resolveMediaList(
       }
 
       if (
-        (item.hint === "series" || item.hint === "auto") &&
+        (item.exactMatch?.type === "series" ||
+          (!item.exactMatch &&
+            (item.hint === "series" || item.hint === "auto"))) &&
         sonarrConfigured
       ) {
         if (sonarrError) {
@@ -173,4 +175,11 @@ export async function resolveMediaList(
       };
     },
   );
+}
+
+export async function resolveMediaList(
+  text: string,
+  defaultHint: MediaHint = "auto",
+): Promise<LookupItemResult[]> {
+  return resolveMediaItems(parseMediaList(text, defaultHint));
 }

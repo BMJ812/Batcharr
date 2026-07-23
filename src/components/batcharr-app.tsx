@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MAX_IMPORT_FILE_BYTES } from "@/lib/limits";
 import type {
   ConnectionTestResult,
   LookupCandidate,
@@ -12,6 +13,7 @@ import type {
 } from "@/lib/types";
 
 type Tab = "import" | "history" | "settings";
+type ImportSourceMode = "paste" | "file";
 type Decision = "pending" | "approved" | "skipped" | "added" | "failed" | "duplicate";
 
 interface ReviewItem extends LookupItemResult {
@@ -120,6 +122,24 @@ function publicToForm(settings: PublicSettings): SettingsForm {
 
 function selectedCandidate(item: ReviewItem): LookupCandidate | null {
   return item.candidates.find((candidate) => candidate.token === item.selectedToken) ?? null;
+}
+
+function buildReviewItems(results: LookupItemResult[]): ReviewItem[] {
+  return results.map((result) => {
+    const firstAvailable =
+      result.candidates.find((candidate) => !candidate.alreadyExists) ??
+      result.candidates[0] ??
+      null;
+
+    return {
+      ...result,
+      selectedToken: firstAvailable?.token ?? null,
+      decision: firstAvailable?.alreadyExists ? "duplicate" : "pending",
+      message: firstAvailable?.alreadyExists
+        ? "The best match is already in the target library."
+        : "",
+    };
+  });
 }
 
 function formatBytes(value?: number): string {
@@ -368,7 +388,11 @@ function ImportPanel({ configured, onHistoryChanged }: {
   configured: boolean;
   onHistoryChanged: () => Promise<void>;
 }) {
+  const [sourceMode, setSourceMode] = useState<ImportSourceMode>("paste");
   const [text, setText] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importSourceName, setImportSourceName] = useState("");
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [defaultHint, setDefaultHint] = useState<MediaHint>("auto");
   const [review, setReview] = useState<ReviewItem[]>([]);
   const [resolving, setResolving] = useState(false);
@@ -388,20 +412,41 @@ function ImportPanel({ configured, onHistoryChanged }: {
   async function resolveList() {
     setResolving(true);
     setError("");
+    setImportWarnings([]);
+    setImportSourceName("");
+
     try {
+      if (sourceMode === "file") {
+        if (!selectedFile) throw new Error("Choose a TXT, CSV, or JSON file first.");
+        if (selectedFile.size > MAX_IMPORT_FILE_BYTES) {
+          throw new Error("Import files are limited to 2 MiB.");
+        }
+
+        const content = await selectedFile.text();
+        const response = await api<{
+          source: { type: "txt" | "csv" | "json"; name: string };
+          warnings: string[];
+          results: LookupItemResult[];
+        }>("/api/import/file", {
+          method: "POST",
+          body: JSON.stringify({
+            filename: selectedFile.name,
+            content,
+            defaultHint,
+          }),
+        });
+
+        setImportSourceName(response.source.name);
+        setImportWarnings(response.warnings);
+        setReview(buildReviewItems(response.results));
+        return;
+      }
+
       const response = await api<{ results: LookupItemResult[] }>("/api/lookup", {
         method: "POST",
         body: JSON.stringify({ text, defaultHint }),
       });
-      setReview(response.results.map((result) => {
-        const firstAvailable = result.candidates.find((candidate) => !candidate.alreadyExists) ?? result.candidates[0] ?? null;
-        return {
-          ...result,
-          selectedToken: firstAvailable?.token ?? null,
-          decision: firstAvailable?.alreadyExists ? "duplicate" : "pending",
-          message: firstAvailable?.alreadyExists ? "The best match is already in the target library." : "",
-        };
-      }));
+      setReview(buildReviewItems(response.results));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not resolve the list.");
     } finally {
@@ -462,20 +507,47 @@ function ImportPanel({ configured, onHistoryChanged }: {
       <section className="hero-panel">
         <div>
           <p className="eyebrow">New batch</p>
-          <h2>Paste a movie and television list.</h2>
+          <h2>Paste a list or upload a structured file.</h2>
           <p>
-            One title per line. Add a year when it matters. Prefix a line with <code>movie:</code> or <code>tv:</code> to force its type.
+            Paste titles as before, or upload a UTF-8 TXT, CSV, or JSON file. Every source uses the same Arr matching and approval workflow.
           </p>
         </div>
         <div className="format-example">
-          <span>Accepted examples</span>
-          <code>The Thing (1982)</code>
-          <code>movie: Alien</code>
-          <code>tv: The Expanse (2015)</code>
+          <span>Accepted sources</span>
+          <code>TXT · existing list format</code>
+          <code>CSV · title, year, type</code>
+          <code>JSON · items array</code>
         </div>
       </section>
 
       <section className="card import-card">
+        <div className="source-tabs" role="tablist" aria-label="Import source">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === "paste"}
+            className={sourceMode === "paste" ? "active" : ""}
+            onClick={() => {
+              setSourceMode("paste");
+              setError("");
+            }}
+          >
+            Paste list
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === "file"}
+            className={sourceMode === "file" ? "active" : ""}
+            onClick={() => {
+              setSourceMode("file");
+              setError("");
+            }}
+          >
+            Upload file
+          </button>
+        </div>
+
         <div className="import-toolbar">
           <label className="field compact-field">
             <span>Unlabeled titles</span>
@@ -485,29 +557,85 @@ function ImportPanel({ configured, onHistoryChanged }: {
               <option value="series">Treat as TV series</option>
             </select>
           </label>
-          <span className="line-counter">{text.split(/\r?\n/).filter((line) => line.trim()).length} entered lines</span>
+          <span className="line-counter">
+            {sourceMode === "paste"
+              ? `${text.split(/\r?\n/).filter((line) => line.trim()).length} entered lines`
+              : selectedFile
+                ? `${selectedFile.name} · ${Math.max(1, Math.ceil(selectedFile.size / 1024))} KB`
+                : "2 MiB maximum · 200 titles"}
+          </span>
         </div>
-        <textarea
-          className="title-list"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={"The Thing (1982)\nAlien\ntv: The Expanse\nDark (2017)"}
-          spellCheck={false}
-        />
+
+        {sourceMode === "paste" ? (
+          <textarea
+            className="title-list"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={"The Thing (1982)\nAlien\ntv: The Expanse\nDark (2017)"}
+            spellCheck={false}
+          />
+        ) : (
+          <div className="file-import-box">
+            <label className="field">
+              <span>Import file</span>
+              <input
+                type="file"
+                accept=".txt,.csv,.json,text/plain,text/csv,application/json"
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                  setSelectedFile(event.target.files?.[0] ?? null);
+                  setReview([]);
+                  setImportWarnings([]);
+                  setImportSourceName("");
+                  setError("");
+                }}
+              />
+            </label>
+            <div className="file-format-help">
+              <strong>Structured columns</strong>
+              <p>CSV: <code>title</code>, <code>year</code>, <code>type</code>, <code>tmdb_id</code>, <code>tvdb_id</code>.</p>
+              <p>JSON: a top-level array or an object containing an <code>items</code> array.</p>
+            </div>
+          </div>
+        )}
+
         {error ? <div className="alert alert-error">{error}</div> : null}
         <div className="card-actions">
           <button
             className="button button-primary"
-            disabled={!configured || resolving || !text.trim()}
+            disabled={
+              !configured ||
+              resolving ||
+              (sourceMode === "paste" ? !text.trim() : !selectedFile)
+            }
             onClick={() => void resolveList()}
           >
-            {resolving ? "Resolving titles…" : "Resolve list"}
+            {resolving
+              ? "Resolving titles…"
+              : sourceMode === "paste"
+                ? "Resolve list"
+                : "Import and resolve"}
           </button>
           {review.length ? (
-            <button className="button button-secondary" onClick={() => setReview([])}>Clear review</button>
+            <button
+              className="button button-secondary"
+              onClick={() => {
+                setReview([]);
+                setImportWarnings([]);
+                setImportSourceName("");
+              }}
+            >
+              Clear review
+            </button>
           ) : null}
         </div>
       </section>
+
+      {importSourceName || importWarnings.length ? (
+        <section className="import-result-note">
+          {importSourceName ? <strong>Imported from {importSourceName}</strong> : null}
+          {importWarnings.map((warning) => <span key={warning}>{warning}</span>)}
+        </section>
+      ) : null}
 
       {review.length ? (
         <>
@@ -542,7 +670,7 @@ function ImportPanel({ configured, onHistoryChanged }: {
                 <article className="review-card" key={item.item.id}>
                   <div className="review-card-topline">
                     <div>
-                      <span className="submitted-label">Submitted</span>
+                      <span className="submitted-label">Input</span>
                       <strong>{item.item.original}</strong>
                     </div>
                     <StatusPill status={item.decision} />
