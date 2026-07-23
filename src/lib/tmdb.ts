@@ -3,6 +3,7 @@ import { MAX_BATCH_ITEMS } from "./limits";
 import type { ParsedListItem } from "./types";
 
 const TMDB_API_BASE = "https://api.themoviedb.org/4";
+const TMDB_V3_API_BASE = "https://api.themoviedb.org/3";
 const TMDB_WEB_HOSTS = new Set([
   "themoviedb.org",
   "www.themoviedb.org",
@@ -50,6 +51,11 @@ export interface TmdbListImportResult {
   warnings: string[];
   truncated: boolean;
   totalAvailable: number;
+}
+
+export interface TmdbConnectionTestResult {
+  service: "tmdb";
+  message: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -265,6 +271,65 @@ async function fetchTmdbListPage(
   }
 
   return payload as TmdbListPagePayload;
+}
+
+export async function testTmdbAccessToken(
+  accessToken: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<TmdbConnectionTestResult> {
+  const token = accessToken.trim();
+
+  if (!token) {
+    throw new Error("A TMDb API Read Access Token is required.");
+  }
+
+  const target = new URL(
+    `${TMDB_V3_API_BASE}/configuration/countries`,
+  );
+  target.searchParams.set("language", "en-US");
+
+  const response = await fetchImpl(target, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    redirect: "error",
+    signal: AbortSignal.timeout(TMDB_REQUEST_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(
+        "TMDb rejected the API Read Access Token.",
+      );
+    }
+
+    throw new Error(
+      `TMDb connection test failed with HTTP ${response.status}.`,
+    );
+  }
+
+  let payload: unknown;
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(
+      "TMDb returned an invalid connection-test response.",
+    );
+  }
+
+  if (!Array.isArray(payload)) {
+    throw new Error(
+      "TMDb returned an unexpected connection-test response.",
+    );
+  }
+
+  return {
+    service: "tmdb",
+    message: "TMDb API Read Access Token connected.",
+  };
 }
 
 export async function importTmdbList(

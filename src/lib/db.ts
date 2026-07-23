@@ -54,6 +54,7 @@ function getDatabase(): DatabaseSync {
       sonarr_monitor TEXT NOT NULL DEFAULT 'all',
       sonarr_season_folder INTEGER NOT NULL DEFAULT 1,
       sonarr_search_on_add INTEGER NOT NULL DEFAULT 1,
+      tmdb_access_token TEXT NOT NULL DEFAULT '',
       discord_application_id TEXT NOT NULL DEFAULT '',
       discord_public_key TEXT NOT NULL DEFAULT '',
       discord_bot_token TEXT NOT NULL DEFAULT '',
@@ -77,6 +78,11 @@ function getDatabase(): DatabaseSync {
     );
   `);
 
+  ensureSettingsColumn(
+    database,
+    "tmdb_access_token",
+    "TEXT NOT NULL DEFAULT ''",
+  );
   ensureSettingsColumn(
     database,
     "discord_application_id",
@@ -127,6 +133,7 @@ interface SettingsRow {
   sonarr_monitor: string;
   sonarr_season_folder: number;
   sonarr_search_on_add: number;
+  tmdb_access_token: string;
   discord_application_id: string;
   discord_public_key: string;
   discord_bot_token: string;
@@ -153,6 +160,7 @@ export function readSettings(): StoredSettings {
     sonarrMonitor: row.sonarr_monitor,
     sonarrSeasonFolder: Boolean(row.sonarr_season_folder),
     sonarrSearchOnAdd: Boolean(row.sonarr_search_on_add),
+    tmdbAccessToken: decryptSecret(row.tmdb_access_token),
     discordApplicationId: row.discord_application_id,
     discordPublicKey: decryptSecret(row.discord_public_key),
     discordBotToken: decryptSecret(row.discord_bot_token),
@@ -183,6 +191,15 @@ export function readPublicSettings(): PublicSettings {
       monitor: settings.sonarrMonitor,
       seasonFolder: settings.sonarrSeasonFolder,
       searchOnAdd: settings.sonarrSearchOnAdd,
+    },
+    tmdb: {
+      hasAccessToken: Boolean(
+        process.env.TMDB_ACCESS_TOKEN?.trim() ||
+        settings.tmdbAccessToken
+      ),
+      managedByEnvironment: Boolean(
+        process.env.TMDB_ACCESS_TOKEN?.trim()
+      ),
     },
     discord: {
       applicationId:
@@ -280,6 +297,7 @@ export function updateSettings(input: Partial<StoredSettings>): StoredSettings {
     merged.sonarrMonitor,
     Number(merged.sonarrSeasonFolder),
     Number(merged.sonarrSearchOnAdd),
+    encryptSecret(merged.tmdbAccessToken),
     merged.discordApplicationId,
     encryptSecret(merged.discordPublicKey),
     encryptSecret(merged.discordBotToken),

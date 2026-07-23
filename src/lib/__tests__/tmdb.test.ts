@@ -3,6 +3,7 @@ import {
   importTmdbList,
   normalizeTmdbListItems,
   parseTmdbListInput,
+  testTmdbAccessToken,
 } from "../tmdb";
 
 describe("parseTmdbListInput", () => {
@@ -194,6 +195,61 @@ describe("importTmdbList", () => {
 
     await expect(
       importTmdbList("123", "secret-token", fetchImpl),
+    ).rejects.toThrow("TMDb rejected the API Read Access Token");
+  });
+});
+describe("testTmdbAccessToken", () => {
+  it("validates a token against a fixed TMDb v3 endpoint", async () => {
+    const fetchImpl = vi.fn(
+      async (
+        input: string | URL | Request,
+        init?: RequestInit,
+      ): Promise<Response> => {
+        const target = new URL(String(input));
+
+        expect(target.origin).toBe("https://api.themoviedb.org");
+        expect(target.pathname).toBe(
+          "/3/configuration/countries",
+        );
+        expect(target.searchParams.get("language")).toBe("en-US");
+        expect(
+          new Headers(init?.headers).get("Authorization"),
+        ).toBe("Bearer test-token");
+
+        return new Response(
+          JSON.stringify([
+            {
+              iso_3166_1: "US",
+              english_name: "United States of America",
+              native_name: "United States",
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        );
+      },
+    );
+
+    await expect(
+      testTmdbAccessToken("test-token", fetchImpl),
+    ).resolves.toEqual({
+      service: "tmdb",
+      message: "TMDb API Read Access Token connected.",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid tokens without returning the token", async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response("Unauthorized", { status: 401 });
+
+    await expect(
+      testTmdbAccessToken("secret-token", fetchImpl),
     ).rejects.toThrow("TMDb rejected the API Read Access Token");
   });
 });
