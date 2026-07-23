@@ -13,7 +13,7 @@ import type {
 } from "@/lib/types";
 
 type Tab = "import" | "history" | "settings";
-type ImportSourceMode = "paste" | "file" | "tmdb";
+type ImportSourceMode = "external" | "paste" | "file";
 type Decision = "pending" | "approved" | "skipped" | "added" | "failed" | "duplicate";
 
 interface ReviewItem extends LookupItemResult {
@@ -409,7 +409,8 @@ function ImportPanel({
   tmdbConfigured: boolean;
   onHistoryChanged: () => Promise<void>;
 }) {
-  const [sourceMode, setSourceMode] = useState<ImportSourceMode>("paste");
+  const [sourceMode, setSourceMode] = useState<ImportSourceMode>("external");
+  const [externalText, setExternalText] = useState("");
   const [text, setText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [tmdbInput, setTmdbInput] = useState("");
@@ -419,8 +420,11 @@ function ImportPanel({
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [defaultHint, setDefaultHint] = useState<MediaHint>("auto");
   const [review, setReview] = useState<ReviewItem[]>([]);
-  const [resolving, setResolving] = useState(false);
+  const [resolvingSource, setResolvingSource] = useState<
+    "primary" | "tmdb" | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
+  const resolving = resolvingSource !== null;
   const [error, setError] = useState("");
 
   const counts = useMemo(() => {
@@ -434,7 +438,7 @@ function ImportPanel({
   }, [review]);
 
   async function resolveList() {
-    setResolving(true);
+    setResolvingSource("primary");
     setError("");
     setImportWarnings([]);
     setImportSourceName("");
@@ -442,49 +446,54 @@ function ImportPanel({
     setTmdbTotalAvailable(0);
 
     try {
-      if (sourceMode === "tmdb") {
-        if (!tmdbConfigured) {
+      if (sourceMode === "external") {
+        if (!externalText.trim()) {
           throw new Error(
-            "Configure a TMDb API Read Access Token in Settings first.",
-          );
-        }
-
-        if (!tmdbInput.trim()) {
-          throw new Error(
-            "Enter a TMDb list URL or numeric list ID.",
+            "Paste the copied contents of an external list first.",
           );
         }
 
         const response = await api<{
-          source: TmdbImportSource;
+          source: {
+            type: "external";
+            name: string;
+          };
           warnings: string[];
-          truncated: boolean;
-          totalAvailable: number;
           results: LookupItemResult[];
-        }>("/api/import/tmdb", {
+        }>("/api/import/external", {
           method: "POST",
           body: JSON.stringify({
-            input: tmdbInput.trim(),
+            text: externalText,
+            defaultHint,
           }),
         });
 
         setImportSourceName(response.source.name);
         setImportWarnings(response.warnings);
-        setTmdbSource(response.source);
-        setTmdbTotalAvailable(response.totalAvailable);
         setReview(buildReviewItems(response.results));
         return;
       }
 
       if (sourceMode === "file") {
-        if (!selectedFile) throw new Error("Choose a TXT, CSV, or JSON file first.");
+        if (!selectedFile) {
+          throw new Error(
+            "Choose a TXT, CSV, or JSON file first.",
+          );
+        }
+
         if (selectedFile.size > MAX_IMPORT_FILE_BYTES) {
-          throw new Error("Import files are limited to 2 MiB.");
+          throw new Error(
+            "Import files are limited to 2 MiB.",
+          );
         }
 
         const content = await selectedFile.text();
+
         const response = await api<{
-          source: { type: "txt" | "csv" | "json"; name: string };
+          source: {
+            type: "txt" | "csv" | "json";
+            name: string;
+          };
           warnings: string[];
           results: LookupItemResult[];
         }>("/api/import/file", {
@@ -502,15 +511,75 @@ function ImportPanel({
         return;
       }
 
-      const response = await api<{ results: LookupItemResult[] }>("/api/lookup", {
+      const response = await api<{
+        results: LookupItemResult[];
+      }>("/api/lookup", {
         method: "POST",
-        body: JSON.stringify({ text, defaultHint }),
+        body: JSON.stringify({
+          text,
+          defaultHint,
+        }),
       });
+
       setReview(buildReviewItems(response.results));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not resolve the list.");
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not resolve the list.",
+      );
     } finally {
-      setResolving(false);
+      setResolvingSource(null);
+    }
+  }
+
+  async function resolveTmdbList() {
+    setResolvingSource("tmdb");
+    setError("");
+    setImportWarnings([]);
+    setImportSourceName("");
+    setTmdbSource(null);
+    setTmdbTotalAvailable(0);
+
+    try {
+      if (!tmdbConfigured) {
+        throw new Error(
+          "Configure the optional TMDb API integration in Settings first.",
+        );
+      }
+
+      if (!tmdbInput.trim()) {
+        throw new Error(
+          "Enter a TMDb list URL or numeric list ID.",
+        );
+      }
+
+      const response = await api<{
+        source: TmdbImportSource;
+        warnings: string[];
+        truncated: boolean;
+        totalAvailable: number;
+        results: LookupItemResult[];
+      }>("/api/import/tmdb", {
+        method: "POST",
+        body: JSON.stringify({
+          input: tmdbInput.trim(),
+        }),
+      });
+
+      setImportSourceName(response.source.name);
+      setImportWarnings(response.warnings);
+      setTmdbSource(response.source);
+      setTmdbTotalAvailable(response.totalAvailable);
+      setReview(buildReviewItems(response.results));
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not load the TMDb list.",
+      );
+    } finally {
+      setResolvingSource(null);
     }
   }
 
@@ -567,22 +636,34 @@ function ImportPanel({
       <section className="hero-panel">
         <div>
           <p className="eyebrow">New batch</p>
-          <h2>Import titles from text, files, or TMDb.</h2>
+          <h2>Import titles from copied pages, text, or files.</h2>
           <p>
-            Paste titles, upload a structured file, or load a public TMDb list. Every source uses the same Arr matching and approval workflow.
+            Copy a visible list from a website, paste a clean title list, or upload a structured file. No third-party account is required.
           </p>
         </div>
         <div className="format-example">
           <span>Accepted sources</span>
+          <code>Webpage copy · titles and years</code>
           <code>TXT · existing list format</code>
           <code>CSV · title, year, type</code>
           <code>JSON · items array</code>
-          <code>TMDb · public list URL or ID</code>
         </div>
       </section>
 
       <section className="card import-card">
         <div className="source-tabs" role="tablist" aria-label="Import source">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === "external"}
+            className={sourceMode === "external" ? "active" : ""}
+            onClick={() => {
+              setSourceMode("external");
+              setError("");
+            }}
+          >
+            External list
+          </button>
           <button
             type="button"
             role="tab"
@@ -593,7 +674,7 @@ function ImportPanel({
               setError("");
             }}
           >
-            Paste list
+            Paste titles
           </button>
           <button
             type="button"
@@ -607,57 +688,72 @@ function ImportPanel({
           >
             Upload file
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={sourceMode === "tmdb"}
-            className={sourceMode === "tmdb" ? "active" : ""}
-            onClick={() => {
-              setSourceMode("tmdb");
-              setError("");
-            }}
-          >
-            TMDb list
-          </button>
         </div>
 
         <div className="import-toolbar">
-          {sourceMode === "tmdb" ? (
-            <div className="tmdb-source-summary">
-              <strong>Public TMDb list</strong>
-              <span>
-                Movies use exact TMDb IDs. Television titles are resolved through Sonarr.
-              </span>
-            </div>
-          ) : (
-            <label className="field compact-field">
-              <span>Unlabeled titles</span>
-              <select
-                value={defaultHint}
-                onChange={(event) =>
-                  setDefaultHint(event.target.value as MediaHint)
-                }
-              >
-                <option value="auto">Search movies and TV</option>
-                <option value="movie">Treat as movies</option>
-                <option value="series">Treat as TV series</option>
-              </select>
-            </label>
-          )}
+          <label className="field compact-field">
+            <span>Unlabeled titles</span>
+            <select
+              value={defaultHint}
+              onChange={(event) =>
+                setDefaultHint(event.target.value as MediaHint)
+              }
+            >
+              <option value="auto">Search movies and TV</option>
+              <option value="movie">Treat as movies</option>
+              <option value="series">Treat as TV series</option>
+            </select>
+          </label>
+
           <span className="line-counter">
-            {sourceMode === "paste"
-              ? `${text.split(/\r?\n/).filter((line) => line.trim()).length} entered lines`
-              : sourceMode === "file"
-                ? selectedFile
-                  ? `${selectedFile.name} · ${Math.max(1, Math.ceil(selectedFile.size / 1024))} KB`
-                  : "2 MiB maximum · 200 titles"
-                : tmdbConfigured
-                  ? "Public lists · 200-title maximum"
-                  : "TMDb token required"}
+            {sourceMode === "external"
+              ? `${externalText
+                  .split(/\r?\n/)
+                  .filter((line) => line.trim()).length} copied lines`
+              : sourceMode === "paste"
+                ? `${text
+                    .split(/\r?\n/)
+                    .filter((line) => line.trim()).length} entered lines`
+                : selectedFile
+                  ? `${selectedFile.name} · ${Math.max(
+                      1,
+                      Math.ceil(selectedFile.size / 1024),
+                    )} KB`
+                  : "2 MiB maximum · 200 titles"}
           </span>
         </div>
 
-        {sourceMode === "paste" ? (
+        {sourceMode === "external" ? (
+          <div className="external-import-layout">
+            <textarea
+              className="title-list external-title-list"
+              value={externalText}
+              onChange={(event) => {
+                setExternalText(event.target.value);
+                setError("");
+              }}
+              placeholder={
+                "Copy the visible list contents from a webpage and paste them here.\n\n1. Alien (1979)\n2. The Thing\n1982-06-25\nTV: Dark (2017)"
+              }
+              spellCheck={false}
+            />
+
+            <div className="file-format-help external-list-help">
+              <strong>How to copy an external list</strong>
+              <p>
+                Open the list webpage and copy the visible title rows. Include
+                ranking numbers or release years when they are available.
+              </p>
+              <p>
+                Batcharr filters common navigation, ratings, links, and page
+                metadata before resolving the detected titles.
+              </p>
+              <p>
+                This works without an account or API token.
+              </p>
+            </div>
+          </div>
+        ) : sourceMode === "paste" ? (
           <textarea
             className="title-list"
             value={text}
@@ -665,7 +761,7 @@ function ImportPanel({
             placeholder={"The Thing (1982)\nAlien\ntv: The Expanse\nDark (2017)"}
             spellCheck={false}
           />
-        ) : sourceMode === "file" ? (
+        ) : (
           <div className="file-import-box">
             <label className="field">
               <span>Import file</span>
@@ -683,43 +779,81 @@ function ImportPanel({
                 }}
               />
             </label>
+
             <div className="file-format-help">
               <strong>Structured columns</strong>
-              <p>CSV: <code>title</code>, <code>year</code>, <code>type</code>, <code>tmdb_id</code>, <code>tvdb_id</code>.</p>
-              <p>JSON: a top-level array or an object containing an <code>items</code> array.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="file-import-box tmdb-import-box">
-            <label className="field">
-              <span>TMDb list URL or ID</span>
-              <input
-                value={tmdbInput}
-                onChange={(event) => {
-                  setTmdbInput(event.target.value);
-                  setError("");
-                }}
-                placeholder="https://www.themoviedb.org/list/12345-example-list"
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-            <div className="file-format-help">
-              <strong>Supported input</strong>
               <p>
-                Paste a public TMDb list URL or enter its numeric list ID.
+                CSV: <code>title</code>, <code>year</code>, <code>type</code>,{" "}
+                <code>tmdb_id</code>, <code>tvdb_id</code>.
               </p>
               <p>
-                Batcharr contacts only the fixed TMDb API endpoint and never fetches the pasted webpage.
+                JSON: a top-level array or an object containing an{" "}
+                <code>items</code> array.
               </p>
             </div>
-            {!tmdbConfigured ? (
-              <div className="alert alert-neutral tmdb-config-warning">
-                Add a TMDb API Read Access Token in Settings before importing a list.
-              </div>
-            ) : null}
           </div>
         )}
+
+        {sourceMode === "external" ? (
+          <details className="advanced-import-details">
+            <summary>
+              <span>Advanced: direct TMDb API import</span>
+              <small>Optional · requires your own TMDb developer token</small>
+            </summary>
+
+            <div className="advanced-import-content">
+              <p className="field-help">
+                The copied-list method above is the recommended option and does
+                not require a TMDb account. This advanced method preserves exact
+                TMDb movie IDs.
+              </p>
+
+              <label className="field">
+                <span>TMDb list URL or ID</span>
+                <input
+                  value={tmdbInput}
+                  disabled={!tmdbConfigured || resolving}
+                  onChange={(event) => {
+                    setTmdbInput(event.target.value);
+                    setError("");
+                  }}
+                  placeholder="https://www.themoviedb.org/list/12345-example-list"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </label>
+
+              {!tmdbConfigured ? (
+                <div className="alert alert-neutral">
+                  The optional TMDb integration is not configured. It can be
+                  enabled from Advanced integrations in Settings.
+                </div>
+              ) : null}
+
+              <div className="advanced-import-actions">
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  disabled={
+                    resolving ||
+                    !tmdbConfigured ||
+                    !tmdbInput.trim()
+                  }
+                  onClick={() => void resolveTmdbList()}
+                >
+                  {resolvingSource === "tmdb"
+                    ? "Loading TMDb list…"
+                    : "Load with TMDb API"}
+                </button>
+              </div>
+
+              <p className="field-help tmdb-credit">
+                This product uses the TMDB API but is not endorsed or certified
+                by TMDB.
+              </p>
+            </div>
+          </details>
+        ) : null}
 
         {error ? <div className="alert alert-error">{error}</div> : null}
         <div className="card-actions">
@@ -728,21 +862,21 @@ function ImportPanel({
             disabled={
               !configured ||
               resolving ||
-              (sourceMode === "paste"
-                ? !text.trim()
-                : sourceMode === "file"
-                  ? !selectedFile
-                  : !tmdbConfigured || !tmdbInput.trim())
+              (sourceMode === "external"
+                ? !externalText.trim()
+                : sourceMode === "paste"
+                  ? !text.trim()
+                  : !selectedFile)
             }
             onClick={() => void resolveList()}
           >
-            {resolving
+            {resolvingSource === "primary"
               ? "Resolving titles…"
-              : sourceMode === "paste"
-                ? "Resolve list"
-                : sourceMode === "file"
-                  ? "Import and resolve"
-                  : "Load TMDb list"}
+              : sourceMode === "external"
+                ? "Extract and resolve"
+                : sourceMode === "paste"
+                  ? "Resolve list"
+                  : "Import and resolve"}
           </button>
           {review.length ? (
             <button
@@ -1173,7 +1307,7 @@ function SettingsPanel({
         <div>
           <p className="eyebrow">Server configuration</p>
           <h2>Connections and request defaults</h2>
-          <p>Configure Arr services, TMDb list access, and optional Discord requests.</p>
+          <p>Configure Arr services and optional Discord or advanced integrations.</p>
         </div>
       </section>
 
@@ -1402,72 +1536,93 @@ function SettingsPanel({
         </section>
       </div>
 
-      <section className="card service-card tmdb-card">
-        <div className="service-heading">
+      <details className="card advanced-settings-card">
+        <summary className="advanced-settings-summary">
           <div className="service-icon tmdb-icon">T</div>
+
           <div>
-            <p className="eyebrow">Public list imports</p>
-            <h3>TMDb</h3>
+            <p className="eyebrow">Advanced integration</p>
+            <h3>TMDb API access</h3>
+            <span className="advanced-settings-description">
+              Optional and not required for copied external lists.
+            </span>
           </div>
-          {publicSettings?.tmdb.hasAccessToken ? (
-            <span className="connected-label">Configured</span>
-          ) : null}
-        </div>
 
-        {publicSettings?.tmdb.managedByEnvironment ? (
+          <span
+            className={
+              publicSettings?.tmdb.hasAccessToken
+                ? "connected-label"
+                : "optional-label"
+            }
+          >
+            {publicSettings?.tmdb.hasAccessToken
+              ? "Configured"
+              : "Optional"}
+          </span>
+        </summary>
+
+        <div className="advanced-settings-content">
           <div className="alert alert-neutral">
-            The TMDb token is supplied by the TMDB_ACCESS_TOKEN container
-            environment variable. Environment values override saved settings.
+            Most users should use Bulk Import → External list. That workflow
+            requires no TMDb account, developer application, or API token.
           </div>
-        ) : null}
 
-        <label className="field">
-          <span>API Read Access Token</span>
-          <input
-            type="password"
-            value={settings.tmdbAccessToken}
-            disabled={publicSettings?.tmdb.managedByEnvironment}
-            onChange={(event) =>
-              setSettings((current) => ({
-                ...current,
-                tmdbAccessToken: event.target.value,
-              }))
+          {publicSettings?.tmdb.managedByEnvironment ? (
+            <div className="alert alert-neutral">
+              The TMDb token is supplied by the TMDB_ACCESS_TOKEN container
+              environment variable. Environment values override saved settings.
+            </div>
+          ) : null}
+
+          <label className="field">
+            <span>API Read Access Token</span>
+            <input
+              type="password"
+              value={settings.tmdbAccessToken}
+              disabled={publicSettings?.tmdb.managedByEnvironment}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  tmdbAccessToken: event.target.value,
+                }))
+              }
+              placeholder={
+                publicSettings?.tmdb.managedByEnvironment
+                  ? "Managed by container environment"
+                  : publicSettings?.tmdb.hasAccessToken
+                    ? "Saved — leave blank to keep"
+                    : "Paste the TMDb API Read Access Token"
+              }
+              autoComplete="off"
+            />
+          </label>
+
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={
+              tmdbTesting ||
+              (!settings.tmdbAccessToken &&
+                !publicSettings?.tmdb.hasAccessToken)
             }
-            placeholder={
-              publicSettings?.tmdb.managedByEnvironment
-                ? "Managed by container environment"
-                : publicSettings?.tmdb.hasAccessToken
-                  ? "Saved — leave blank to keep"
-                  : "Paste the TMDb API Read Access Token"
-            }
-            autoComplete="off"
-          />
-        </label>
+            onClick={() => void testTmdb()}
+          >
+            {tmdbTesting ? "Testing TMDb…" : "Test TMDb token"}
+          </button>
 
-        <button
-          className="button button-secondary button-full"
-          type="button"
-          disabled={
-            tmdbTesting ||
-            (!settings.tmdbAccessToken &&
-              !publicSettings?.tmdb.hasAccessToken)
-          }
-          onClick={() => void testTmdb()}
-        >
-          {tmdbTesting ? "Testing TMDb…" : "Test TMDb token"}
-        </button>
+          <div className="divider" />
 
-        <div className="divider" />
+          <p className="field-help">
+            Batcharr uses this token only for fixed TMDb API requests. The token
+            remains server-side and is encrypted when stored in SQLite.
+          </p>
 
-        <p className="field-help">
-          Batcharr uses this token only for fixed TMDb API requests. The token
-          remains server-side and is encrypted when stored in SQLite.
-        </p>
-        <p className="field-help tmdb-credit">
-          This product uses the TMDB API but is not endorsed or certified by
-          TMDB.
-        </p>
-      </section>
+          <p className="field-help tmdb-credit">
+            This product uses the TMDB API but is not endorsed or certified by
+            TMDB.
+          </p>
+        </div>
+      </details>
 
       <section className="card service-card discord-card">
         <div className="service-heading">
