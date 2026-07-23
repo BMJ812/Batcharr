@@ -13,7 +13,7 @@ import type {
 } from "@/lib/types";
 
 type Tab = "import" | "history" | "settings";
-type ImportSourceMode = "paste" | "file";
+type ImportSourceMode = "paste" | "file" | "tmdb";
 type Decision = "pending" | "approved" | "skipped" | "added" | "failed" | "duplicate";
 
 interface ReviewItem extends LookupItemResult {
@@ -33,6 +33,15 @@ interface HistoryEntry {
   createdAt: string;
 }
 
+interface TmdbImportSource {
+  type: "tmdb";
+  id: number;
+  name: string;
+  description: string;
+  canonicalUrl: string;
+  attribution: string;
+}
+
 interface SettingsForm {
   radarrUrl: string;
   radarrApiKey: string;
@@ -49,6 +58,7 @@ interface SettingsForm {
   sonarrMonitor: string;
   sonarrSeasonFolder: boolean;
   sonarrSearchOnAdd: boolean;
+  tmdbAccessToken: string;
   discordApplicationId: string;
   discordPublicKey: string;
   discordBotToken: string;
@@ -73,6 +83,7 @@ const EMPTY_SETTINGS: SettingsForm = {
   sonarrMonitor: "all",
   sonarrSeasonFolder: true,
   sonarrSearchOnAdd: true,
+  tmdbAccessToken: "",
   discordApplicationId: "",
   discordPublicKey: "",
   discordBotToken: "",
@@ -111,6 +122,7 @@ function publicToForm(settings: PublicSettings): SettingsForm {
     sonarrMonitor: settings.sonarr.monitor,
     sonarrSeasonFolder: settings.sonarr.seasonFolder,
     sonarrSearchOnAdd: settings.sonarr.searchOnAdd,
+    tmdbAccessToken: "",
     discordApplicationId: settings.discord.applicationId,
     discordPublicKey: "",
     discordBotToken: "",
@@ -359,7 +371,11 @@ export function BatcharrApp() {
         ) : null}
 
         {activeTab === "import" ? (
-          <ImportPanel configured={configured} onHistoryChanged={loadHistory} />
+          <ImportPanel
+            configured={configured}
+            tmdbConfigured={Boolean(publicSettings?.tmdb.hasAccessToken)}
+            onHistoryChanged={loadHistory}
+          />
         ) : null}
         {activeTab === "history" ? (
           <HistoryPanel history={history} onRefresh={loadHistory} />
@@ -384,13 +400,21 @@ export function BatcharrApp() {
   );
 }
 
-function ImportPanel({ configured, onHistoryChanged }: {
+function ImportPanel({
+  configured,
+  tmdbConfigured,
+  onHistoryChanged,
+}: {
   configured: boolean;
+  tmdbConfigured: boolean;
   onHistoryChanged: () => Promise<void>;
 }) {
   const [sourceMode, setSourceMode] = useState<ImportSourceMode>("paste");
   const [text, setText] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [tmdbInput, setTmdbInput] = useState("");
+  const [tmdbSource, setTmdbSource] = useState<TmdbImportSource | null>(null);
+  const [tmdbTotalAvailable, setTmdbTotalAvailable] = useState(0);
   const [importSourceName, setImportSourceName] = useState("");
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
   const [defaultHint, setDefaultHint] = useState<MediaHint>("auto");
@@ -414,8 +438,44 @@ function ImportPanel({ configured, onHistoryChanged }: {
     setError("");
     setImportWarnings([]);
     setImportSourceName("");
+    setTmdbSource(null);
+    setTmdbTotalAvailable(0);
 
     try {
+      if (sourceMode === "tmdb") {
+        if (!tmdbConfigured) {
+          throw new Error(
+            "Configure a TMDb API Read Access Token in Settings first.",
+          );
+        }
+
+        if (!tmdbInput.trim()) {
+          throw new Error(
+            "Enter a TMDb list URL or numeric list ID.",
+          );
+        }
+
+        const response = await api<{
+          source: TmdbImportSource;
+          warnings: string[];
+          truncated: boolean;
+          totalAvailable: number;
+          results: LookupItemResult[];
+        }>("/api/import/tmdb", {
+          method: "POST",
+          body: JSON.stringify({
+            input: tmdbInput.trim(),
+          }),
+        });
+
+        setImportSourceName(response.source.name);
+        setImportWarnings(response.warnings);
+        setTmdbSource(response.source);
+        setTmdbTotalAvailable(response.totalAvailable);
+        setReview(buildReviewItems(response.results));
+        return;
+      }
+
       if (sourceMode === "file") {
         if (!selectedFile) throw new Error("Choose a TXT, CSV, or JSON file first.");
         if (selectedFile.size > MAX_IMPORT_FILE_BYTES) {
@@ -507,9 +567,9 @@ function ImportPanel({ configured, onHistoryChanged }: {
       <section className="hero-panel">
         <div>
           <p className="eyebrow">New batch</p>
-          <h2>Paste a list or upload a structured file.</h2>
+          <h2>Import titles from text, files, or TMDb.</h2>
           <p>
-            Paste titles as before, or upload a UTF-8 TXT, CSV, or JSON file. Every source uses the same Arr matching and approval workflow.
+            Paste titles, upload a structured file, or load a public TMDb list. Every source uses the same Arr matching and approval workflow.
           </p>
         </div>
         <div className="format-example">
@@ -517,6 +577,7 @@ function ImportPanel({ configured, onHistoryChanged }: {
           <code>TXT · existing list format</code>
           <code>CSV · title, year, type</code>
           <code>JSON · items array</code>
+          <code>TMDb · public list URL or ID</code>
         </div>
       </section>
 
@@ -546,23 +607,53 @@ function ImportPanel({ configured, onHistoryChanged }: {
           >
             Upload file
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={sourceMode === "tmdb"}
+            className={sourceMode === "tmdb" ? "active" : ""}
+            onClick={() => {
+              setSourceMode("tmdb");
+              setError("");
+            }}
+          >
+            TMDb list
+          </button>
         </div>
 
         <div className="import-toolbar">
-          <label className="field compact-field">
-            <span>Unlabeled titles</span>
-            <select value={defaultHint} onChange={(event) => setDefaultHint(event.target.value as MediaHint)}>
-              <option value="auto">Search movies and TV</option>
-              <option value="movie">Treat as movies</option>
-              <option value="series">Treat as TV series</option>
-            </select>
-          </label>
+          {sourceMode === "tmdb" ? (
+            <div className="tmdb-source-summary">
+              <strong>Public TMDb list</strong>
+              <span>
+                Movies use exact TMDb IDs. Television titles are resolved through Sonarr.
+              </span>
+            </div>
+          ) : (
+            <label className="field compact-field">
+              <span>Unlabeled titles</span>
+              <select
+                value={defaultHint}
+                onChange={(event) =>
+                  setDefaultHint(event.target.value as MediaHint)
+                }
+              >
+                <option value="auto">Search movies and TV</option>
+                <option value="movie">Treat as movies</option>
+                <option value="series">Treat as TV series</option>
+              </select>
+            </label>
+          )}
           <span className="line-counter">
             {sourceMode === "paste"
               ? `${text.split(/\r?\n/).filter((line) => line.trim()).length} entered lines`
-              : selectedFile
-                ? `${selectedFile.name} · ${Math.max(1, Math.ceil(selectedFile.size / 1024))} KB`
-                : "2 MiB maximum · 200 titles"}
+              : sourceMode === "file"
+                ? selectedFile
+                  ? `${selectedFile.name} · ${Math.max(1, Math.ceil(selectedFile.size / 1024))} KB`
+                  : "2 MiB maximum · 200 titles"
+                : tmdbConfigured
+                  ? "Public lists · 200-title maximum"
+                  : "TMDb token required"}
           </span>
         </div>
 
@@ -574,7 +665,7 @@ function ImportPanel({ configured, onHistoryChanged }: {
             placeholder={"The Thing (1982)\nAlien\ntv: The Expanse\nDark (2017)"}
             spellCheck={false}
           />
-        ) : (
+        ) : sourceMode === "file" ? (
           <div className="file-import-box">
             <label className="field">
               <span>Import file</span>
@@ -586,6 +677,8 @@ function ImportPanel({ configured, onHistoryChanged }: {
                   setReview([]);
                   setImportWarnings([]);
                   setImportSourceName("");
+                  setTmdbSource(null);
+                  setTmdbTotalAvailable(0);
                   setError("");
                 }}
               />
@@ -596,6 +689,36 @@ function ImportPanel({ configured, onHistoryChanged }: {
               <p>JSON: a top-level array or an object containing an <code>items</code> array.</p>
             </div>
           </div>
+        ) : (
+          <div className="file-import-box tmdb-import-box">
+            <label className="field">
+              <span>TMDb list URL or ID</span>
+              <input
+                value={tmdbInput}
+                onChange={(event) => {
+                  setTmdbInput(event.target.value);
+                  setError("");
+                }}
+                placeholder="https://www.themoviedb.org/list/12345-example-list"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <div className="file-format-help">
+              <strong>Supported input</strong>
+              <p>
+                Paste a public TMDb list URL or enter its numeric list ID.
+              </p>
+              <p>
+                Batcharr contacts only the fixed TMDb API endpoint and never fetches the pasted webpage.
+              </p>
+            </div>
+            {!tmdbConfigured ? (
+              <div className="alert alert-neutral tmdb-config-warning">
+                Add a TMDb API Read Access Token in Settings before importing a list.
+              </div>
+            ) : null}
+          </div>
         )}
 
         {error ? <div className="alert alert-error">{error}</div> : null}
@@ -605,7 +728,11 @@ function ImportPanel({ configured, onHistoryChanged }: {
             disabled={
               !configured ||
               resolving ||
-              (sourceMode === "paste" ? !text.trim() : !selectedFile)
+              (sourceMode === "paste"
+                ? !text.trim()
+                : sourceMode === "file"
+                  ? !selectedFile
+                  : !tmdbConfigured || !tmdbInput.trim())
             }
             onClick={() => void resolveList()}
           >
@@ -613,7 +740,9 @@ function ImportPanel({ configured, onHistoryChanged }: {
               ? "Resolving titles…"
               : sourceMode === "paste"
                 ? "Resolve list"
-                : "Import and resolve"}
+                : sourceMode === "file"
+                  ? "Import and resolve"
+                  : "Load TMDb list"}
           </button>
           {review.length ? (
             <button
@@ -622,6 +751,8 @@ function ImportPanel({ configured, onHistoryChanged }: {
                 setReview([]);
                 setImportWarnings([]);
                 setImportSourceName("");
+                setTmdbSource(null);
+                setTmdbTotalAvailable(0);
               }}
             >
               Clear review
@@ -632,8 +763,34 @@ function ImportPanel({ configured, onHistoryChanged }: {
 
       {importSourceName || importWarnings.length ? (
         <section className="import-result-note">
-          {importSourceName ? <strong>Imported from {importSourceName}</strong> : null}
-          {importWarnings.map((warning) => <span key={warning}>{warning}</span>)}
+          {importSourceName ? (
+            tmdbSource ? (
+              <a
+                className="tmdb-source-link"
+                href={tmdbSource.canonicalUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Imported from {importSourceName}
+              </a>
+            ) : (
+              <strong>Imported from {importSourceName}</strong>
+            )
+          ) : null}
+          {tmdbSource && tmdbTotalAvailable > 0 ? (
+            <span>{tmdbTotalAvailable} entries reported by TMDb</span>
+          ) : null}
+          {tmdbSource?.description ? (
+            <span>{tmdbSource.description}</span>
+          ) : null}
+          {importWarnings.map((warning) => (
+            <span key={warning}>{warning}</span>
+          ))}
+          {tmdbSource ? (
+            <span className="tmdb-attribution">
+              {tmdbSource.attribution}
+            </span>
+          ) : null}
         </section>
       ) : null}
 
@@ -825,6 +982,7 @@ function SettingsPanel({
   onSaved: () => Promise<void>;
 }) {
   const [testing, setTesting] = useState<"radarr" | "sonarr" | null>(null);
+  const [tmdbTesting, setTmdbTesting] = useState(false);
   const [discordAction, setDiscordAction] = useState<
     "test" | "register" | null
   >(null);
@@ -866,6 +1024,34 @@ function SettingsPanel({
       setError(caught instanceof Error ? caught.message : "Connection test failed.");
     } finally {
       setTesting(null);
+    }
+  }
+
+  async function testTmdb() {
+    setTmdbTesting(true);
+    setMessage("");
+    setError("");
+
+    try {
+      const result = await api<{ message: string }>(
+        "/api/tmdb/test",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            accessToken: settings.tmdbAccessToken,
+          }),
+        },
+      );
+
+      setMessage(result.message);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "TMDb connection test failed.",
+      );
+    } finally {
+      setTmdbTesting(false);
     }
   }
 
@@ -967,6 +1153,7 @@ function SettingsPanel({
         ...current,
         radarrApiKey: "",
         sonarrApiKey: "",
+        tmdbAccessToken: "",
         discordPublicKey: "",
         discordBotToken: "",
       }));
@@ -985,8 +1172,8 @@ function SettingsPanel({
       <section className="section-heading settings-heading">
         <div>
           <p className="eyebrow">Server configuration</p>
-          <h2>Arr connections and request defaults</h2>
-          <p>Use the URLs visible to the Batcharr container, not necessarily the URLs used by your desktop browser.</p>
+          <h2>Connections and request defaults</h2>
+          <p>Configure Arr services, TMDb list access, and optional Discord requests.</p>
         </div>
       </section>
 
@@ -1214,6 +1401,73 @@ function SettingsPanel({
           />
         </section>
       </div>
+
+      <section className="card service-card tmdb-card">
+        <div className="service-heading">
+          <div className="service-icon tmdb-icon">T</div>
+          <div>
+            <p className="eyebrow">Public list imports</p>
+            <h3>TMDb</h3>
+          </div>
+          {publicSettings?.tmdb.hasAccessToken ? (
+            <span className="connected-label">Configured</span>
+          ) : null}
+        </div>
+
+        {publicSettings?.tmdb.managedByEnvironment ? (
+          <div className="alert alert-neutral">
+            The TMDb token is supplied by the TMDB_ACCESS_TOKEN container
+            environment variable. Environment values override saved settings.
+          </div>
+        ) : null}
+
+        <label className="field">
+          <span>API Read Access Token</span>
+          <input
+            type="password"
+            value={settings.tmdbAccessToken}
+            disabled={publicSettings?.tmdb.managedByEnvironment}
+            onChange={(event) =>
+              setSettings((current) => ({
+                ...current,
+                tmdbAccessToken: event.target.value,
+              }))
+            }
+            placeholder={
+              publicSettings?.tmdb.managedByEnvironment
+                ? "Managed by container environment"
+                : publicSettings?.tmdb.hasAccessToken
+                  ? "Saved — leave blank to keep"
+                  : "Paste the TMDb API Read Access Token"
+            }
+            autoComplete="off"
+          />
+        </label>
+
+        <button
+          className="button button-secondary button-full"
+          type="button"
+          disabled={
+            tmdbTesting ||
+            (!settings.tmdbAccessToken &&
+              !publicSettings?.tmdb.hasAccessToken)
+          }
+          onClick={() => void testTmdb()}
+        >
+          {tmdbTesting ? "Testing TMDb…" : "Test TMDb token"}
+        </button>
+
+        <div className="divider" />
+
+        <p className="field-help">
+          Batcharr uses this token only for fixed TMDb API requests. The token
+          remains server-side and is encrypted when stored in SQLite.
+        </p>
+        <p className="field-help tmdb-credit">
+          This product uses the TMDB API but is not endorsed or certified by
+          TMDB.
+        </p>
+      </section>
 
       <section className="card service-card discord-card">
         <div className="service-heading">

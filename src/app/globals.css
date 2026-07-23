@@ -101,6 +101,8 @@ code {
 
 .source-tabs {
   display: inline-flex;
+  max-width: 100%;
+  overflow-x: auto;
   gap: 6px;
   padding: 4px;
   margin-bottom: 20px;
@@ -206,6 +208,45 @@ code {
 
 .import-result-note strong {
   color: var(--text);
+}
+
+.tmdb-source-summary {
+  display: grid;
+  gap: 3px;
+}
+
+.tmdb-source-summary strong {
+  font-size: 0.8rem;
+}
+
+.tmdb-source-summary span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.tmdb-import-box {
+  align-items: start;
+}
+
+.tmdb-config-warning {
+  grid-column: 1 / -1;
+}
+
+.tmdb-source-link {
+  color: var(--accent-strong);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.tmdb-source-link:hover {
+  text-decoration: underline;
+}
+
+.tmdb-attribution {
+  flex-basis: 100%;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--muted-strong);
 }
 
 
@@ -885,6 +926,25 @@ code {
   color: #cbb4ff;
   background: rgba(181, 140, 255, 0.12);
   border: 1px solid rgba(181, 140, 255, 0.24);
+}
+
+.tmdb-icon {
+  color: #90cea1;
+  background: rgba(1, 180, 228, 0.12);
+  border: 1px solid rgba(144, 206, 161, 0.28);
+}
+
+.tmdb-card {
+  padding: 24px;
+}
+
+.tmdb-card .alert {
+  margin-bottom: 16px;
+}
+
+.tmdb-credit {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .connected-label {
