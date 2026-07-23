@@ -5,6 +5,7 @@
 Implemented in the initial scaffold:
 
 - Paste mixed movie and television lists
+- Upload TXT, CSV, and JSON lists through the web interface
 - Parse optional years and explicit `movie:` / `tv:` prefixes
 - Resolve through Radarr and Sonarr
 - Detect Sonarr API v3 or v5
@@ -18,7 +19,7 @@ Implemented in the initial scaffold:
 
 ## 0.2 — Better batch handling
 
-- CSV and TXT upload
+- TMDb public-list import
 - Downloadable error report
 - Save unfinished review batches
 - Retry failed requests without resolving the entire list again

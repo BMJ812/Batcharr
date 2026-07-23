@@ -63,6 +63,10 @@ export interface ParsedListItem {
   query: string;
   year: number | null;
   hint: MediaHint;
+  exactMatch?: {
+    type: MediaType;
+    externalId: number;
+  };
 }
 
 export interface LookupCandidate {

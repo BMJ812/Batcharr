@@ -7,6 +7,7 @@ Paste a mixed list of movies and television series, review the matches returned 
 ## Current MVP
 
 - Mixed movie and TV lists
+- TXT, CSV, and JSON file imports through the web UI
 - `movie:` and `tv:` line prefixes
 - Optional release-year parsing
 - Radarr `/api/v3` support
@@ -29,7 +30,36 @@ TV | The Expanse (2015)
 Dark - 2017
 ```
 
-Unlabeled titles can search both Radarr and Sonarr or be forced to one media type for the entire batch.
+Unlabeled titles can search both Radarr and Sonarr or be forced to one media type for the entire batch. TXT uploads use this same format.
+
+### CSV imports
+
+CSV files require a header row. Supported columns are:
+
+```text
+title,year,type,tmdb_id,tvdb_id
+```
+
+`title` is required. `type` accepts `movie`, `film`, `tv`, `show`, or `series`. A movie TMDb ID or series TVDb ID enables exact Arr lookup instead of fuzzy title matching.
+
+### JSON imports
+
+JSON files may use a top-level array or an object with an `items` array:
+
+```json
+{
+  "items": [
+    {
+      "title": "Alien",
+      "year": 1979,
+      "type": "movie",
+      "tmdbId": 348
+    }
+  ]
+}
+```
+
+File imports are limited to 2 MiB and 200 unique titles. Uploaded file contents are parsed in memory and are not retained.
 
 ## Run with Docker Compose
 
@@ -90,7 +120,7 @@ Open `http://localhost:3000`.
 ## Planned next steps
 
 1. Per-user accounts and request attribution
-2. CSV file upload and watched import folder
+2. Watched import folder and saved source refreshes
 3. Saved batch drafts and retry controls
 4. Multiple Radarr/Sonarr instances, including 4K routing
 5. Per-user quotas and approval policies
