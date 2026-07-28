@@ -273,6 +273,7 @@ export function updateSettings(input: Partial<StoredSettings>): StoredSettings {
       sonarr_monitor = ?,
       sonarr_season_folder = ?,
       sonarr_search_on_add = ?,
+      tmdb_access_token = ?,
       discord_application_id = ?,
       discord_public_key = ?,
       discord_bot_token = ?,
